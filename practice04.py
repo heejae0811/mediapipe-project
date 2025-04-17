@@ -22,7 +22,7 @@ rectangle_connections = [
 ]
 
 # 영상 열기
-cap = cv2.VideoCapture("climbing02.mov")
+cap = cv2.VideoCapture("videos/climbing02.mov")
 
 # 프레임 스킵 설정
 frame_skip = 2

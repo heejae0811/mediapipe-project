@@ -6,7 +6,7 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 # 영상 경로 (세로 영상 사용)
-video_path = "climbing01.mov"
+video_path = "videos/climbing01.mov"
 cap = cv2.VideoCapture(video_path)
 
 with mp_pose.Pose(

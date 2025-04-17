@@ -6,7 +6,7 @@ import pandas as pd
 mp_pose = mp.solutions.pose
 
 # 🎥 영상 열기
-cap = cv2.VideoCapture("climbing01.mov")
+cap = cv2.VideoCapture("videos/climbing13.mov")
 
 # 🕒 프레임 시간 계산
 fps = cap.get(cv2.CAP_PROP_FPS)
@@ -16,11 +16,11 @@ hip_centers = []
 timestamps = []
 
 with mp_pose.Pose(
-    static_image_mode=False,
-    model_complexity=2,
-    enable_segmentation=False,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
+    static_image_mode = False,
+    model_complexity = 2,
+    enable_segmentation = False,
+    min_detection_confidence = 0.5,
+    min_tracking_confidence = 0.5
 ) as pose:
 
     frame_idx = 0
@@ -81,5 +81,6 @@ summary.update(calc_stats(jerk_norm, "jerk"))
 
 # CSV 저장
 df_summary = pd.DataFrame([summary])
-df_summary.to_csv("hip_motion_summary.csv", index=False)
-print("✅ 요약 완료: hip_motion_summary.csv 저장됨")
+df_summary.to_csv("pelvis_motion13.csv", index=False)
+
+print("✅ 요약 완료: pelvis_motion13.csv 저장됨")
