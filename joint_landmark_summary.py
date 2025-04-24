@@ -2,41 +2,48 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# 설정
-CSV_DIR = "data/joint_visibility"  # csv 파일들이 있는 폴더
+CSV_DIR = "data/joint_visibility"  # CSV 파일 경로
 TARGET_PATTERN = "joint_visibility"  # 파일명 패턴
-TOP_N = 10  # 그래프에 보여줄 상위 관절 수
-OUTPUT_IMG = "joint_visibility_rank.png"
+OUTPUT_IMG = "joint_landmark_results.png"  # 저장할 이미지 파일명
 
-# csv 파일 불러오기
+# 얼굴 관련 키워드 정의
+face_keywords = ["eye", "nose", "ear", "mouth"]
+
+# 파일 로딩
 visibility_dfs = []
 for file in os.listdir(CSV_DIR):
     if file.endswith(".csv") and TARGET_PATTERN in file:
         df = pd.read_csv(os.path.join(CSV_DIR, file))
         visibility_dfs.append(df)
 
-# 데이터 병합 및 평균 계산
+# 데이터 병합
 combined_df = pd.concat(visibility_dfs)
-summary_df = combined_df.groupby(["Landmark_Index", "Landmark_Name"], as_index=False).agg({
+
+# 얼굴 관련 관절 필터링
+def is_face_related(name):
+    return any(keyword in name.lower() for keyword in face_keywords)
+
+filtered_df = combined_df[~combined_df["Landmark_Name"].apply(is_face_related)]
+
+# 평균 가시성 계산
+summary_df = filtered_df.groupby(["Landmark_Index", "Landmark_Name"], as_index=False).agg({
     "Mean_Visibility": "mean"
 }).sort_values(by="Mean_Visibility", ascending=False)
 
-print("\n전체 영상 기준 인식이 잘된 관절 순위:\n")
+# 터미널 출력
+print("\n[얼굴 제외] 전체 영상 기준 인식이 잘된 관절 순위:\n")
 print(summary_df.to_string(index=False))
 
-# 그래프 그리기
-plt.figure(figsize=(10, 6))
-top_df = summary_df.head(TOP_N)
-plt.bar(top_df["Landmark_Name"], top_df["Mean_Visibility"])
-plt.title(f"Top {TOP_N} Most Visible Landmarks Across Videos")
+# 그래프 출력
+plt.figure(figsize=(12, max(6, len(summary_df) * 0.3)))
+plt.bar(summary_df["Landmark_Name"], summary_df["Mean_Visibility"])
+plt.title("Total Joint Mean Visibility Without Face landmark")
 plt.xlabel("Landmark")
 plt.ylabel("Mean Visibility")
-plt.xticks(rotation=45)
+plt.xticks(rotation=90, fontsize=8)
 plt.tight_layout()
 plt.grid(axis='y', linestyle='--', alpha=0.5)
-
-# 그래프 이미지 저장
-plt.savefig(OUTPUT_IMG, dpi=300)  # 고해상도로 저장
-print(f"\n 그래프 이미지 저장 완료: \"{OUTPUT_IMG}\"")
+plt.savefig(OUTPUT_IMG, dpi=300)  # 이미지 저장 추가
+print(f"그래프 이미지 저장 완료: \"{OUTPUT_IMG}\"")
 
 plt.show()
