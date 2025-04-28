@@ -7,7 +7,7 @@ TARGET_PATTERN = "joint_visibility"  # 파일명 패턴
 OUTPUT_IMG = "joint_landmark_results.png"  # 저장할 이미지 파일명
 
 # 얼굴 관련 키워드 정의
-face_keywords = ["eye", "nose", "ear", "mouth"]
+face_keywords = ["eye", "ear", "mouth"]
 
 # 파일 로딩
 visibility_dfs = []
@@ -31,19 +31,21 @@ summary_df = filtered_df.groupby(["Landmark_Index", "Landmark_Name"], as_index=F
 }).sort_values(by="Mean_Visibility", ascending=False)
 
 # 터미널 출력
-print("\n[얼굴 제외] 전체 영상 기준 인식이 잘된 관절 순위:\n")
+print("\n[얼굴 제외, nose 포함] 전체 영상 기준 인식이 잘된 관절 순위:\n")
 print(summary_df.to_string(index=False))
 
 # 그래프 출력
 plt.figure(figsize=(12, max(6, len(summary_df) * 0.3)))
 plt.bar(summary_df["Landmark_Name"], summary_df["Mean_Visibility"])
-plt.title("Total Joint Mean Visibility Without Face landmark")
+plt.title("Total Joint Mean Visibility (Excluding Face, Including Nose)")
 plt.xlabel("Landmark")
 plt.ylabel("Mean Visibility")
 plt.xticks(rotation=90, fontsize=8)
 plt.tight_layout()
 plt.grid(axis='y', linestyle='--', alpha=0.5)
-plt.savefig(OUTPUT_IMG, dpi=300)  # 이미지 저장 추가
-print(f"그래프 이미지 저장 완료: \"{OUTPUT_IMG}\"")
+
+# 그래프 이미지 저장
+plt.savefig(OUTPUT_IMG, dpi=300)
+print(f"\n그래프 이미지 저장 완료: \"{OUTPUT_IMG}\"")
 
 plt.show()

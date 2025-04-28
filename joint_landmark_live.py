@@ -2,8 +2,7 @@ import cv2
 import mediapipe as mp
 
 # 설정
-VIDEO_PATH = "./videos/climbing20.mov"
-VISIBILITY_THRESHOLD = 0.7
+VIDEO_PATH = "./videos/climbing10.mov"
 
 # Mediapipe 초기화
 mp_pose = mp.solutions.pose
@@ -32,6 +31,7 @@ while cap.isOpened():
         )
 
     cv2.imshow("Pose Landmarks - Mediapipe Default", frame)
+
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 

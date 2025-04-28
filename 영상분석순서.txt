@@ -6,3 +6,30 @@ Mean Visibility 범위	해석
 0.80 – 0.90	양호한 인식 (조금 흔들릴 수 있으나 대부분 인식됨)
 0.65 – 0.80	중간 정도 정확도 (상황에 따라 인식 실패 가능)
 < 0.6       낮은 인식 정확도 (다수 프레임에서 인식 불안정)
+
+2. Shoulder and Hip Movement 추출
+time
+x, y
+distance, speed, velocity, acceleration, jerk
+
+(4개의 관절 x 7개의 변수) + time = 29개 Feature
+
+3. 머신러닝 분류
+KNN
+Decision Tree
+Random Forest
+...
+
+4. XAI 모델 설명 기법
+SHAP
+LIME
+
+주암장의 그레이드로 숙련자/비숙련자 분류 (선행연구: 자기보고 등급은 실제 등급을 높은 설명력으로 예측)
+예를 들어, 실내 볼더링장에서 온사이트로 풀 수 있는 최고 난이도(self-estimate)
+더클 빨강 이상: 숙련자
+더클 초록-파랑: 비숙련자
+
+설문조사: CAS-20
+
+코, 어깨, 골반 움직임 추출
+
