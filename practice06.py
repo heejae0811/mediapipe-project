@@ -5,10 +5,10 @@ import pandas as pd
 
 mp_pose = mp.solutions.pose
 
-# 🎥 영상 열기
+# 영상 열기
 cap = cv2.VideoCapture("videos/climbing13.mov")
 
-# 🕒 프레임 시간 계산
+# 프레임 시간 계산
 fps = cap.get(cv2.CAP_PROP_FPS)
 dt = 1.0 / fps if fps > 0 else 1.0 / 30
 
@@ -83,4 +83,4 @@ summary.update(calc_stats(jerk_norm, "jerk"))
 df_summary = pd.DataFrame([summary])
 df_summary.to_csv("pelvis_motion13.csv", index=False)
 
-print("✅ 요약 완료: pelvis_motion13.csv 저장됨")
+print("요약 완료: pelvis_motion13.csv 저장됨")
