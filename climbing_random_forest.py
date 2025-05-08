@@ -11,19 +11,15 @@ from sklearn.metrics import confusion_matrix, classification_report, roc_curve, 
 
 # 1. CSV 불러오기
 csv_files = glob.glob('./data/features_*.csv')
-df_list = [pd.read_csv(file) for file in csv_files]
-df = pd.concat(df_list, ignore_index=True)
+df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
 print(f"[정보] 총 데이터 수: {len(df)}개 샘플")
 
-# 2. Feature / Label 분리
+# 2. Feature / Label 분리 및 정규화
 X_raw = df.drop(['id', 'label'], axis=1)
 y = LabelEncoder().fit_transform(df['label'])
+X = StandardScaler().fit_transform(X_raw)
 
-# 3. 정규화 (권장)
-scaler = StandardScaler()
-X = scaler.fit_transform(X_raw)
-
-# 4. 학습/테스트 분할
+# 3. 학습/테스트 분할
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, stratify=y, random_state=42
 )
@@ -49,7 +45,7 @@ grid_search = GridSearchCV(
 grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
 
-# 6. 예측 및 평가
+# 5. 예측 및 평가
 y_pred = best_model.predict(X_test)
 y_prob = best_model.predict_proba(X_test)[:, 1]
 
@@ -59,7 +55,7 @@ print('Confusion Matrix:\n', confusion_matrix(y_test, y_pred))
 print('Classification Report:\n', classification_report(y_test, y_pred, digits=5, zero_division=0))
 print(f"[Random Forest] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}")
 
-# 7. Confusion Matrix 시각화
+# 6. Confusion Matrix 시각화
 ConfusionMatrixDisplay.from_estimator(
     best_model, X_test, y_test,
     display_labels=['Class 0', 'Class 1'],
@@ -69,10 +65,11 @@ plt.title('Random Forest Confusion Matrix')
 plt.tight_layout()
 plt.show()
 
-# 8. ROC Curve
+# 7. ROC Curve
 fpr, tpr, _ = roc_curve(y_test, y_prob)
 roc_auc = auc(fpr, tpr)
-plt.figure(figsize=(5.5, 4))
+
+plt.figure(figsize=(6, 4))
 plt.plot(fpr, tpr, color=cm.Blues(0.6), lw=2, label=f'AUC = {roc_auc:.2f}')
 plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
 plt.xlabel('False Positive Rate')
@@ -83,7 +80,7 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# 9. Feature Importance
+# 8. Feature Importance
 importances = best_model.feature_importances_
 indices = np.argsort(importances)[::-1]
 features = X_raw.columns[indices]
@@ -97,7 +94,7 @@ plt.tight_layout()
 plt.show()
 
 importance_df = pd.DataFrame({'Feature': features, 'Importance': importances[indices]})
-print("\nTop 10 Important Features:")
+print("\nTop 10 Features Important:")
 print(importance_df.head(10))
 
 # 10. Train/Test Accuracy 시각화
@@ -121,7 +118,7 @@ for i, v in enumerate(scores):
 plt.tight_layout()
 plt.show()
 
-# 11. Learning Curve
+# 10. Learning Curve
 train_sizes, train_scores, val_scores = learning_curve(
     best_model, X_train, y_train,
     train_sizes=np.linspace(0.1, 1.0, 5),
@@ -133,7 +130,7 @@ train_sizes, train_scores, val_scores = learning_curve(
 train_mean = np.mean(train_scores, axis=1)
 val_mean = np.mean(val_scores, axis=1)
 
-plt.figure(figsize=(5.5, 4))
+plt.figure(figsize=(6, 4))
 plt.plot(train_sizes, train_mean, 'o--', label='Training Accuracy', color=cm.Blues(0.6))
 plt.plot(train_sizes, val_mean, 'o-', label='Validation Accuracy', color=cm.Blues(0.9))
 plt.title('Random Forest Learning Curve')
@@ -145,7 +142,7 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-# 12. GridSearch 결과 heatmap
+# 11. GridSearch 결과 heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_max_depth', columns='param_n_estimators', values='mean_test_score'

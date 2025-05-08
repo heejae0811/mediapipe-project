@@ -1,0 +1,8 @@
+1. Best Parameters (GridSearchCV)
+2. Best F1-score (CV 평균)
+3. Confusion Matrix
+4. ROC Curve
+5. Classification Report (생략 가능, Confusion Matrix에 포함돼도 됨)
+6. Feature Importance (Top 5~10)
+7. Train vs Test Accuracy (Bar chart)
+8. Learning Curve
