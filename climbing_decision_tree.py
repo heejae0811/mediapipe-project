@@ -54,7 +54,20 @@ print('Confusion Matrix:\n', confusion_matrix(y_test, y_pred))
 print('Classification Report:\n', classification_report(y_test, y_pred, digits=5, zero_division=0))
 print(f"[Decision Tree] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}")
 
-# 6. Confusion Matrix 시각화
+# 6. Best Decision Tree Structure 시각화
+plt.figure(figsize=(12, 8))
+plot_tree(
+    best_model,
+    feature_names=X_raw.columns,
+    class_names=['Class 0', 'Class 1'],
+    filled=True,
+    rounded=True
+)
+plt.title(f"Best Decision Tree Structure (Max Depth: {best_model.get_depth()})")
+plt.tight_layout()
+plt.show()
+
+# 7. Confusion Matrix 시각화
 ConfusionMatrixDisplay.from_estimator(
     best_model, X_test, y_test,
     display_labels=['Class 0', 'Class 1'],
@@ -64,7 +77,7 @@ plt.title('Decision Tree Confusion Matrix')
 plt.tight_layout()
 plt.show()
 
-# 7. ROC Curve
+# 8. ROC Curve
 fpr, tpr, _ = roc_curve(y_test, y_prob)
 roc_auc = auc(fpr, tpr)
 
@@ -79,7 +92,7 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# 8. Feature Importance
+# 9. Feature Importance
 importances = best_model.feature_importances_
 indices = np.argsort(importances)[::-1]
 features = X_raw.columns[indices]
@@ -96,7 +109,7 @@ importance_df = pd.DataFrame({'Feature': features, 'Importance': importances[ind
 print("\nTop 10 Features Important:")
 print(importance_df.head(10))
 
-# 9. Train/Test Accuracy 시각화
+# 10. Train/Test Accuracy 시각화
 train_score = best_model.score(X_train, y_train)
 test_score = best_model.score(X_test, y_test)
 scores = [train_score, test_score]
@@ -117,7 +130,7 @@ for i, v in enumerate(scores):
 plt.tight_layout()
 plt.show()
 
-# 10. Learning Curve
+# 11. Learning Curve
 train_sizes, train_scores, val_scores = learning_curve(
     best_model, X_train, y_train,
     train_sizes=np.linspace(0.1, 1.0, 5),
@@ -142,7 +155,7 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-# 11. GridSearch 결과 heatmap
+# 12. GridSearch 결과 heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_max_depth',
