@@ -27,9 +27,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 # 4. Decision Tree + GridSearchCV
 param_grid = {
     'criterion': ['gini', 'entropy'],
-    'max_depth': [3, 5, 10, None],
+    'max_depth': [3, 5, 10, 15],
     'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
+    'min_samples_leaf': [1, 2, 5],
     'class_weight': [None, 'balanced']
 }
 

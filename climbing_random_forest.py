@@ -26,9 +26,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # 5. Random Forest + GridSearchCV
 param_grid_rf = {
-    'n_estimators': [50, 100],
+    'n_estimators': [100, 200],
     'criterion': ['gini', 'entropy'],
-    'max_depth': [3, 5, 10],
+    'max_depth': [None, 5, 10, 20],
     'min_samples_split': [2, 5],
     'min_samples_leaf': [1, 2],
     'class_weight': [None, 'balanced']
