@@ -7,7 +7,7 @@ import matplotlib.cm as cm
 from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay, balanced_accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay, balanced_accuracy_score
 from sklearn.inspection import permutation_importance
 
 # 1. CSV 불러오기

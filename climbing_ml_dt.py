@@ -140,7 +140,6 @@ train_sizes, train_scores, val_scores = learning_curve(
     shuffle=True,
     random_state=42
 )
-
 train_mean = np.mean(train_scores, axis=1)
 val_mean = np.mean(val_scores, axis=1)
 
