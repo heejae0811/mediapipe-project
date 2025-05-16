@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay, balanced_accuracy_score
+from sklearn.svm import SVC
+from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay, roc_curve, auc, roc_auc_score, balanced_accuracy_score
+from sklearn.inspection import permutation_importance
 
 # 1. CSV 불러오기
 csv_files = glob.glob('./data/features_*.csv')
@@ -24,36 +25,34 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, stratify=y, random_state=42
 )
 
-# 5. Random Forest + GridSearchCV
-param_grid_rf = {
-    'n_estimators': [100, 200],
-    'criterion': ['gini', 'entropy'],
-    'max_depth': [None, 5, 10, 20],
-    'min_samples_split': [2, 5],
-    'min_samples_leaf': [1, 2],
-    'class_weight': [None, 'balanced']
+# 4. SVM + GridSearchCV
+param_grid_svm = {
+    'C': [0.01, 0.1, 1, 10, 100],
+    'kernel': ['linear', 'rbf'],
+    'gamma': ['scale', 'auto', 0.01, 0.001]
 }
 
 grid_search = GridSearchCV(
-    estimator=RandomForestClassifier(random_state=42),
-    param_grid=param_grid_rf,
-    cv=5,
-    scoring='f1',
-    n_jobs=-1,
-    verbose=1
+    estimator=SVC(probability=True, random_state=42),
+    param_grid=param_grid_svm,
+    cv=5,                       # 더 신뢰도 높은 교차검증
+    scoring='f1',               # 또는 'f1_macro' if 다중 클래스/불균형
+    n_jobs=-1,                  # 병렬 처리
+    verbose=2,                  # 학습 상태 출력 (선택)
+    return_train_score=True     # 과적합 분석 가능 (선택)
 )
 grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
 
 # 5. 예측 및 평가
-y_pred = best_model.predict(X_test)
-y_prob = best_model.predict_proba(X_test)[:, 1]
+y_pred = best_model.predict(X_test) # predict(): 최종 클래스(0 또는 1) 예측
+y_proba = best_model.predict_proba(X_test)[:, 1] # 각 클래스일 확률을 예측, ROC Curve에서 사용
 
 print('Best Parameters:', grid_search.best_params_)
 print('Best f1-score (CV mean):', f"{grid_search.best_score_:.5f}")
 print('Confusion Matrix:\n', confusion_matrix(y_test, y_pred))
 print('Classification Report:\n', classification_report(y_test, y_pred, digits=5, zero_division=0))
-print(f"[Random Forest] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}")
+print(f"[SVM] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}")
 
 # 6. Confusion Matrix
 ConfusionMatrixDisplay.from_estimator(
@@ -64,58 +63,68 @@ ConfusionMatrixDisplay.from_estimator(
     cmap='Blues',
     values_format='d'
 )
-plt.title('Confusion Matrix - Random Forest')
+plt.title('Confusion Matrix - SVM')
 plt.tight_layout()
 plt.show()
 
 # 7. ROC Curve
-fpr, tpr, _ = roc_curve(y_test, y_prob)
+fpr, tpr, _ = roc_curve(y_test, y_proba)
 roc_auc = auc(fpr, tpr)
 
 plt.figure()
-plt.plot(fpr, tpr, lw=2, label=f'AUC = {roc_auc:.2f}')
+plt.plot(fpr, tpr, lw=2, label=f'AUC = {roc_auc:.2f})')
 plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
-plt.title('ROC Curve - Random Forest')
+plt.title('ROC Curve - SVM')
 plt.legend(loc='lower right')
 plt.grid(True, alpha=0.5)
 plt.tight_layout()
 plt.show()
 
-# 8. Feature Importance
-importances = best_model.feature_importances_
+# 8. Permutation Importance
+result = permutation_importance(
+    estimator=grid_search.best_estimator_,
+    X=X_test,
+    y=y_test,
+    scoring='roc_auc', # or accuracy
+    n_repeats=30,
+    random_state=42,
+)
+
+importances = result.importances_mean
+stds = result.importances_std
+features = X_raw.columns
 indices = np.argsort(importances)[::-1]
-features = X_raw.columns[indices]
 
 plt.figure(figsize=(12, 6))
-plt.bar(range(len(features)), importances[indices], align='center')
-plt.xticks(range(len(features)), features, rotation=45, ha='right', fontsize=10)
-plt.ylabel('Importance Score')
-plt.title('Feature Importance - Random Forest')
+plt.bar(range(len(features)), importances[indices], yerr=stds[indices], align='center')
+plt.xticks(range(len(features)), features[indices], rotation=45, ha='right', fontsize=10)
+plt.ylabel("Decrease in AUC")
+plt.title("Permutation Importance - SVM")
 plt.grid(True, alpha=0.5)
 plt.tight_layout()
 plt.show()
 
-importance_df = pd.DataFrame({'Feature': features, 'Importance': importances[indices]})
-print("\nTop 10 Features Important")
+importance_df = pd.DataFrame({'Feature': features[indices], 'Importance': importances[indices]})
+print("\nTop 10 Permutation Importance")
 print(importance_df.head(10))
 
-# 10. Train/Test Accuracy
+# 9. Train/Test Accuracy
 train_score = best_model.score(X_train, y_train)
 test_score = best_model.score(X_test, y_test)
 scores = [train_score, test_score]
 labels = ['Train Accuracy', 'Test Accuracy']
 
-print(f"\n[Random Forest] Train Accuracy: {train_score:.5f}")
-print(f"[Random Forest] Test Accuracy : {test_score:.5f}")
+print(f"\n[SVM] Train Accuracy: {train_score:.5f}")
+print(f"[SVM] Test Accuracy : {test_score:.5f}")
 
 colors = [cm.Blues(0.6), cm.Blues(0.9)]
 plt.figure()
 plt.bar(labels, scores, color=colors)
 plt.ylim(0, 1.1)
 plt.ylabel('Accuracy')
-plt.title('Accuracy - Random Forest (Train vs Test)')
+plt.title('Accuracy - SVM (Train vs Test)')
 plt.grid(axis='y', alpha=0.5)
 for i, v in enumerate(scores):
     plt.text(i, v + 0.02, f'{v:.2f}', ha='center')
@@ -124,9 +133,9 @@ plt.show()
 
 # 10. Learning Curve
 train_sizes, train_scores, val_scores = learning_curve(
-    estimator=grid_search.best_estimator_,
-    X=X_test,
-    y=y_test,
+    estimator=best_model,
+    X=X_train,
+    y=y_train,
     train_sizes=np.linspace(0.1, 1.0, 5),
     cv=5,
     scoring='accuracy',
@@ -139,11 +148,11 @@ val_mean = np.mean(val_scores, axis=1)
 plt.figure()
 plt.plot(train_sizes, train_mean, 'o--', label='Training Accuracy')
 plt.plot(train_sizes, val_mean, 'o-', label='Validation Accuracy')
-plt.title('Learning Curve - Random Forest')
+plt.title('Learning Curve - SVM')
 plt.xlabel('Training Set Size')
 plt.ylabel('Accuracy')
 plt.ylim(0, 1.1)
-plt.grid(True)
+plt.grid(True, alpha=0.5)
 plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
@@ -151,15 +160,15 @@ plt.show()
 # 11. GridSearch 결과 heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
-    index='param_max_depth',
-    columns='param_n_estimators',
+    index='param_n_neighbors',
+    columns='param_weights',
     values='mean_test_score'
 )
 
 plt.figure()
 sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
-plt.title('Random Forest GridSearchCV F1-score Heatmap')
-plt.xlabel('n_estimators')
-plt.ylabel('max_depth')
+plt.title('SVM GridSearchCV F1-score Heatmap')
+plt.xlabel('weights')
+plt.ylabel('n_neighbors')
 plt.tight_layout()
 plt.show()
