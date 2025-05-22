@@ -16,7 +16,7 @@ print(f"[정보] 총 데이터 수: {len(df)}개 샘플")
 
 # 2. Feature / Label 분리 및 정규화
 X_raw = df.drop(['id', 'label'], axis=1)
-X = StandardScaler().fit_transform(X_raw) # StandatdScaler(): 정규화, 각 feature를 평균 0, 표준편차 1로 조정
+X = StandardScaler().fit_transform(X_raw)
 y = LabelEncoder().fit_transform(df['label'])
 
 # 3. 학습/테스트 분할
@@ -138,7 +138,7 @@ pivot = cv_results.pivot_table(
 
 plt.figure()
 sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
-plt.title('Logistic Regression GridSearchCV F1-score Heatmap')
+plt.title('Logistic Regression GridSearchCV Heatmap')
 plt.xlabel('solver')
 plt.ylabel('C')
 plt.tight_layout()

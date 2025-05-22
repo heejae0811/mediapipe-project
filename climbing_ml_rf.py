@@ -126,8 +126,8 @@ plt.show()
 # 10. Learning Curve
 train_sizes, train_scores, val_scores = learning_curve(
     estimator=best_model,
-    X=X_test,
-    y=y_test,
+    X=X_train,
+    y=y_train,
     train_sizes=np.linspace(0.1, 1.0, 5),
     cv=5,
     scoring='accuracy',
@@ -149,7 +149,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 11. GridSearchCV 결과 Heatmap
+# 11. GridSearchCV Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_max_depth',
@@ -159,7 +159,7 @@ pivot = cv_results.pivot_table(
 
 plt.figure()
 sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
-plt.title('Random Forest GridSearchCV F1-score Heatmap')
+plt.title('Random Forest GridSearchCV Heatmap')
 plt.xlabel('n_estimators')
 plt.ylabel('max_depth')
 plt.tight_layout()

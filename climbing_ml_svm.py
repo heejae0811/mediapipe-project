@@ -160,15 +160,15 @@ plt.show()
 # 11. GridSearchCV 결과 Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
-    index='param_n_neighbors',
-    columns='param_weights',
+    index='param_C',
+    columns='param_kernel',
     values='mean_test_score'
 )
 
 plt.figure()
 sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
-plt.title('SVM GridSearchCV F1-score Heatmap')
-plt.xlabel('weights')
-plt.ylabel('n_neighbors')
+plt.title('SVM GridSearchCV Heatmap')
+plt.xlabel('kernel')
+plt.ylabel('C')
 plt.tight_layout()
 plt.show()

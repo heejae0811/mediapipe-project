@@ -61,7 +61,7 @@ print(f"[Decision Tree] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pr
 plt.figure()
 plot_tree(
     decision_tree=best_model,
-    feature_names=X_raw.columns,
+    feature_names=X_raw.columns.tolist(),
     class_names=['Beginner', 'Advanced'],
     filled=True,
     rounded=True
@@ -140,8 +140,8 @@ plt.show()
 # 11. Learning Curve
 train_sizes, train_scores, val_scores = learning_curve(
     estimator=best_model,
-    X=X_test,
-    y=y_test,
+    X=X_train,
+    y=y_train,
     train_sizes=np.linspace(0.1, 1.0, 5),
     cv=5,
     scoring='accuracy', # or f1
@@ -163,7 +163,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 12. GridSearchCV 결과 Heatmap
+# 12. GridSearchCV Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_max_depth',
@@ -173,7 +173,7 @@ pivot = cv_results.pivot_table(
 
 plt.figure()
 sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
-plt.title('Decision Tree GridSearchCV F1-score Heatmap')
+plt.title('Decision Tree GridSearchCV Heatmap')
 plt.xlabel('min_samples_split')
 plt.ylabel('max_depth')
 plt.tight_layout()

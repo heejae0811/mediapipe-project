@@ -27,7 +27,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # 4. KNN + GridSearchCV
 param_grid_knn = {
-    'n_neighbors': [1, 3, 5, 7, 9, 11],          # 분류 시 기준이 되는 이웃의 개수(K값)
+    'n_neighbors': [1, 3, 5, 7, 9, 11],   # 분류 시 기준이 되는 이웃의 개수(K값)
     'weights': ['uniform', 'distance'],   # 가중치 여부: uniform - 모든 이웃에게 동일한 영향력 / distance - 가까운 이웃에게 더 높은 영향력
     'metric': ['euclidean', 'manhattan']  # 거리 계산 방식: euclidean - 직선 거리 / manhattan: 격자식 거리
 }
@@ -157,7 +157,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 11. GridSearchCV 결과 Heatmap
+# 11. GridSearchCV Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_n_neighbors',
@@ -167,7 +167,7 @@ pivot = cv_results.pivot_table(
 
 plt.figure()
 sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
-plt.title('KNN GridSearchCV F1-score Heatmap')
+plt.title('KNN GridSearchCV Heatmap')
 plt.xlabel('weights')
 plt.ylabel('n_neighbors')
 plt.tight_layout()
