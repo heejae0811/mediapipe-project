@@ -7,7 +7,7 @@ import matplotlib.cm as cm
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve
 from sklearn.tree import DecisionTreeClassifier, plot_tree
-from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc,ConfusionMatrixDisplay, balanced_accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay, balanced_accuracy_score
 
 # 1. CSV 불러오기
 csv_files = glob.glob('./data/features_*.csv')
@@ -39,7 +39,7 @@ grid_search = GridSearchCV(
     estimator=DecisionTreeClassifier(random_state=42),
     param_grid=param_grid_dt,   # 실험할 하이퍼파라미터 조합
     cv=5,                       # 5-fold 교차 검증: 데이터를 5개로 나눠 학습-검증 5번 반복
-    scoring='f1',               # 모델 성능 평가 기준: F1-score (정밀도 + 재현율의 조화 평균)
+    scoring='f1',               # 모델 성능 평가 기준: F1-score (정밀도 + 재현율의 조화 평균) / Accuracy
     n_jobs=-1,                  # 가능한 모든 CPU 코어를 사용해서 병렬로 계산
     verbose=1,                  # 학습 중 로그 출력
     return_train_score=True     # 파라미터 조합을 시도하면서 훈련/검증 점수 둘 다 기록
@@ -48,8 +48,8 @@ grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
 
 # 5. 예측 및 평가
-y_pred = best_model.predict(X_test)             # X_test에 대한 최종 예측 결과 (0 또는 1로 분류만 함)
-y_prob = best_model.predict_proba(X_test)[:, 1] # X_test에 대해 클래스 1일 확률 (예측 확률값)
+y_pred = best_model.predict(X_test)             # X_test에 대한 최종 클래스(0 또는 1) 예측
+y_prob = best_model.predict_proba(X_test)[:, 1] # X_test에 대해 클래스 1일 확률 예측, ROC Curve에서 사용
 
 print('Best Parameters:', grid_search.best_params_)
 print('Best f1-score (CV mean):', f"{grid_search.best_score_:.5f}")
@@ -60,7 +60,7 @@ print(f"[Decision Tree] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pr
 # 6. Best Decision Tree Structure
 plt.figure()
 plot_tree(
-    best_model,
+    decision_tree=best_model,
     feature_names=X_raw.columns,
     class_names=['Beginner', 'Advanced'],
     filled=True,
@@ -144,7 +144,7 @@ train_sizes, train_scores, val_scores = learning_curve(
     y=y_test,
     train_sizes=np.linspace(0.1, 1.0, 5),
     cv=5,
-    scoring='accuracy',
+    scoring='accuracy', # or f1
     shuffle=True,
     random_state=42
 )
@@ -163,7 +163,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 12. GridSearch 결과 heatmap
+# 12. GridSearchCV 결과 Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_max_depth',

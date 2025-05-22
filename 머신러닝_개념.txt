@@ -90,6 +90,8 @@
  Learning Curve
 
  10. XAI
+ plot_tree()
+ Feature Importance
  Permutation Importance
  SHAP
  LIME

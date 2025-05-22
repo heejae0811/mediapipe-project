@@ -127,3 +127,19 @@ plt.grid(True, alpha=0.5)
 plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
+
+# 10. GridSearchCV 결과 heatmap
+cv_results = pd.DataFrame(grid_search.cv_results_)
+pivot = cv_results.pivot_table(
+    index='param_C',
+    columns='param_solver',
+    values='mean_test_score'
+)
+
+plt.figure()
+sns.heatmap(pivot, annot=True, fmt=".3f", cmap="Blues")
+plt.title('Logistic Regression GridSearchCV F1-score Heatmap')
+plt.xlabel('solver')
+plt.ylabel('C')
+plt.tight_layout()
+plt.show()

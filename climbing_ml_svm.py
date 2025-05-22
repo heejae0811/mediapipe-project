@@ -45,8 +45,8 @@ grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
 
 # 5. 예측 및 평가
-y_pred = best_model.predict(X_test) # predict(): 최종 클래스(0 또는 1) 예측
-y_proba = best_model.predict_proba(X_test)[:, 1] # 각 클래스일 확률을 예측, ROC Curve에서 사용
+y_pred = best_model.predict(X_test)
+y_proba = best_model.predict_proba(X_test)[:, 1]
 
 print('Best Parameters:', grid_search.best_params_)
 print('Best f1-score (CV mean):', f"{grid_search.best_score_:.5f}")
@@ -84,10 +84,10 @@ plt.show()
 
 # 8. Permutation Importance
 result = permutation_importance(
-    estimator=grid_search.best_estimator_,
+    estimator=best_model,
     X=X_test,
     y=y_test,
-    scoring='roc_auc', # or accuracy
+    scoring='roc_auc',
     n_repeats=30,
     random_state=42,
 )
@@ -157,7 +157,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 11. GridSearch 결과 heatmap
+# 11. GridSearchCV 결과 Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_n_neighbors',

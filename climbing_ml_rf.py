@@ -149,7 +149,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 11. GridSearch 결과 heatmap
+# 11. GridSearchCV 결과 Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_max_depth',

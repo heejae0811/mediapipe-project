@@ -27,7 +27,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # 4. KNN + GridSearchCV
 param_grid_knn = {
-    'n_neighbors': [3, 5, 7, 9],          # 분류 시 기준이 되는 이웃의 개수(K값)
+    'n_neighbors': [1, 3, 5, 7, 9, 11],          # 분류 시 기준이 되는 이웃의 개수(K값)
     'weights': ['uniform', 'distance'],   # 가중치 여부: uniform - 모든 이웃에게 동일한 영향력 / distance - 가까운 이웃에게 더 높은 영향력
     'metric': ['euclidean', 'manhattan']  # 거리 계산 방식: euclidean - 직선 거리 / manhattan: 격자식 거리
 }
@@ -84,10 +84,10 @@ plt.show()
 
 # 8. Permutation Importance
 result = permutation_importance(
-    estimator=grid_search.best_estimator_,
+    estimator=best_model,
     X=X_test,
     y=y_test,
-    scoring='roc_auc',
+    scoring='roc_auc', # f1 / accuracy
     n_repeats=30,
     random_state=42,
 )
@@ -157,7 +157,7 @@ plt.legend(loc='lower right')
 plt.tight_layout()
 plt.show()
 
-# 11. GridSearch 결과 heatmap
+# 11. GridSearchCV 결과 Heatmap
 cv_results = pd.DataFrame(grid_search.cv_results_)
 pivot = cv_results.pivot_table(
     index='param_n_neighbors',
