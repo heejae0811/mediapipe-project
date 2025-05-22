@@ -1,0 +1,95 @@
+ - 모수 (Parametric): 모델 형태를 미리 정해두고, 그 형태에 맞는 파라미터만 학습해서 예측
+ Logis Regression, Linear Regression, Neural Network(모수지만 매우 유연)
+
+ - 비모수 (Non-Parametric): 미리 정해진 함수 형태 없이, 데이터가 말해주는 대로 유연하게 모델을 만듦
+ DT, RF, KNN, SVM(선형이면 모수, RBF면 비모수)
+
+ - 과소적합 (Underfitting)
+ 모델이 너무 단순해서 훈련 데이터조차 잘 학습하지 못하는 상태
+ Train Score: 낮음 / Test Score: 낮음
+
+ - 과적합 (Overfitting)
+ 모델이 너무 복잡해서 훈련 데이터만 완벽히 맞추고, 새로운 데이터에는 성능이 떨어지는 상태
+ Train Score: 매우 높음 / Test Score: 낮음
+
+ "과소적합은 모델이 데이터를 충분히 설명하지 못하는 상태로, 훈련 및 검증 성능이 모두 낮다.
+ 반면 과적합은 모델이 훈련 데이터에만 과도하게 적합하여, 일반화 성능이 떨어지는 문제를 유발한다.
+ 따라서 적절한 하이퍼파라미터 조정 및 교차검증을 통해 이 두 극단을 피하는 것이 중요하다."
+
+ ────────────────────────────────────────────
+ - Decision Tree
+ 데이터를 여러 기준으로 분할해 나가며 트리 구조로 분류 또는 예측을 하는 모델
+ 전체 데이터에서 가장 잘 나눌 수 있는 기준을 선택해 더 이상 나눌 수 없거나 조건을 만족할 때까지 반복
+
+ - Random Forest
+ 여러 개의 결정 트리를 만들어 결과를 더 정확하고 안정적으로 분류 또는 예측을 하는 모델
+
+ - KNN (K-Nearest Neighbors)
+ 가장 가까운 K개의 이웃을 보고 분류(Classification) 하거나 예측(Regression) 하는 비모수(non-parametric) 머신러닝 기법
+ 어떤 데이터가 들어오면 주변 값(K)를 보고 결정하는 모델
+ 예를 들어, 근처에 고양이가 많으면 고양이로 판단
+
+ - SVM (Support Vector Machine)
+ 두 개 이상의 클래스를 구분할 수 있는 가장 최적의 '결정 경계(Decision Boundary)'를 찾아주는 알고리즘
+ 즉, 서로 다른 그룹을 나누는 최고의 선 또는 곡선을 찾는 모델, 선과 가까운 데이터들을 서포트 백터 라고 부름
+ 학습 데이터를 받아서 가장 넓은 마진을 가진 결정 경계를 찾고, 새로운 데이터가 들어오면 어느 쪽에 속하는지 결정
+
+ - Logistic Regression
+ 특정 사건이 일어날 확률을 예측하고, 그 확률을 바탕으로 이진 분류를 수행하는 머신러닝 분류 기법
+ 예를 들어, 이 환자가 질병이 있을 확률은?
+
+ ────────────────────────────────────────────
+
+ 1. Best Parameters (GridSearchCV)
+ 2. Best F1-score (CV 평균)
+ 3. Confusion Matrix
+ 4. ROC Curve
+ 5. Classification Report (생략 가능, Confusion Matrix에 포함돼도 됨)
+ 6. Feature Importance (Top 5~10)
+ 7. Train vs Test Accuracy (Bar chart)
+ 8. Learning Curve
+
+ ────────────────────────────────────────────
+
+ 1. 문제 정의 및 목표 설정
+ 무엇을 예측/분류/설명하고 싶은가?
+ 이진 분류, 다중 분류, 회귀..
+
+ 2. 데이터 수집
+ Label이 있어야 Supervised Machine Learning 가능
+
+ 3. 데이터 전처리 Preprocessing
+ 결측지, 이상치 제거
+ 불필요한 열 제거
+
+ 4. X / y 정의
+ X(Feature): 입력 변수 (거리, 시간, 속도..)
+ y(Label, Target): 예측 대상 (숙련자, 비숙련자)
+
+ 5. Feature Selection
+ 모든 피처를 사용할 필요 없이
+ Feature Importance, Permutation Importance, Correlation, SelectBest, PCA 또는 XAI로 중요 변수 추출
+
+ 6. Train / Test 데이터 분할
+ train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+ 7. 머신러닝 모델 선택 및 하이퍼파라미터 튜닝
+ DT, RF, KNN, SVM..
+ GridSearchCV, RandomizedSearchCV..
+ scoring: f1, accuracy, roc_auc..
+ random_state, cv, n_jobs, verbose..
+
+ 8. Classification 결과 예측
+ model.predict(X_test)
+ model.predict_proba(X_test): ROC, AUC
+
+ 9. 모델 평가
+ Confusion Matrix
+ Accuracy, Precision, Recall, F1-score
+ ROC Curve, AUC
+ Learning Curve
+
+ 10. XAI
+ Permutation Importance
+ SHAP
+ LIME

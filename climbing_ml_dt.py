@@ -16,37 +16,40 @@ print(f"[정보] 총 데이터 수: {len(df)}개 샘플")
 
 # 2. Feature / Label 분리 및 정규화
 X_raw = df.drop(['id', 'label'], axis=1)
-y = LabelEncoder().fit_transform(df['label']) # 0 비숙련자 / 1 숙련자
 X = StandardScaler().fit_transform(X_raw)
+y = LabelEncoder().fit_transform(df['label']) # 0: 비숙련자 / 1: 숙련자
 
 # 3. 학습/테스트 분할
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, stratify=y, random_state=42
+    X, y, test_size=0.2,
+    stratify=y,     # 각 클래스의 비율을 동일하게 유지하기 위한 속성값
+    random_state=42 # 데이터를 무작위로 섞을 때 사용하는 난수값
 )
 
 # 4. Decision Tree + GridSearchCV
 param_grid_dt = {
-    'criterion': ['gini', 'entropy'],
-    'max_depth': [3, 5, 10, 15],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 5],
-    'class_weight': [None, 'balanced']
+    'criterion': ['gini', 'entropy'],   # 트리를 분할할 때 사용하는 기준: gini - 클래스가 얼마나 균등하게 섞여있는지 측정(분순도) / entropy - 데이터를 나누었을 때 얼마나 정보를 많이 줄 수 있는가
+    'max_depth': [3, 5, 10, 15],        # 트리의 최대 깊이 제한
+    'min_samples_split': [2, 5, 10],    # 노드를 나누기 위한 최소 샘플 수
+    'min_samples_leaf': [1, 2, 5],      # 노드 끝의 최소 샘플 수
+    'class_weight': [None, 'balanced']  # 불균형한 클래스의 가중치 조절
 }
 
 grid_search = GridSearchCV(
     estimator=DecisionTreeClassifier(random_state=42),
-    param_grid=param_grid_dt,
-    cv=5,
-    scoring='f1',
-    n_jobs=-1,
-    verbose=1
+    param_grid=param_grid_dt,   # 실험할 하이퍼파라미터 조합
+    cv=5,                       # 5-fold 교차 검증: 데이터를 5개로 나눠 학습-검증 5번 반복
+    scoring='f1',               # 모델 성능 평가 기준: F1-score (정밀도 + 재현율의 조화 평균)
+    n_jobs=-1,                  # 가능한 모든 CPU 코어를 사용해서 병렬로 계산
+    verbose=1,                  # 학습 중 로그 출력
+    return_train_score=True     # 파라미터 조합을 시도하면서 훈련/검증 점수 둘 다 기록
 )
 grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
 
 # 5. 예측 및 평가
-y_pred = best_model.predict(X_test)
-y_prob = best_model.predict_proba(X_test)[:, 1]
+y_pred = best_model.predict(X_test)             # X_test에 대한 최종 예측 결과 (0 또는 1로 분류만 함)
+y_prob = best_model.predict_proba(X_test)[:, 1] # X_test에 대해 클래스 1일 확률 (예측 확률값)
 
 print('Best Parameters:', grid_search.best_params_)
 print('Best f1-score (CV mean):', f"{grid_search.best_score_:.5f}")
@@ -69,7 +72,7 @@ plt.show()
 
 # 7. Confusion Matrix
 ConfusionMatrixDisplay.from_estimator(
-    estimator=grid_search.best_estimator_,
+    estimator=best_model,
     X=X_test,
     y=y_test,
     display_labels=['Beginner', 'Advanced'],
@@ -136,7 +139,7 @@ plt.show()
 
 # 11. Learning Curve
 train_sizes, train_scores, val_scores = learning_curve(
-    estimator=grid_search.best_estimator_,
+    estimator=best_model,
     X=X_test,
     y=y_test,
     train_sizes=np.linspace(0.1, 1.0, 5),

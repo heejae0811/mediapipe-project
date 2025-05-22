@@ -17,8 +17,8 @@ print(f"[정보] 총 데이터 수: {len(df)}개 샘플")
 
 # 2. Feature / Label 분리 및 정규화
 X_raw = df.drop(['id', 'label'], axis=1)
-y = LabelEncoder().fit_transform(df['label']) # 0 비숙련자 / 1 숙련자
 X = StandardScaler().fit_transform(X_raw)
+y = LabelEncoder().fit_transform(df['label']) # 0: 비숙련자 / 1: 숙련자
 
 # 3. 학습/테스트 분할
 X_train, X_test, y_train, y_test = train_test_split(
@@ -27,9 +27,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # 4. KNN + GridSearchCV
 param_grid_knn = {
-    'n_neighbors': [3, 5, 7, 9],
-    'weights': ['uniform', 'distance'],
-    'metric': ['euclidean', 'manhattan']
+    'n_neighbors': [3, 5, 7, 9],          # 분류 시 기준이 되는 이웃의 개수(K값)
+    'weights': ['uniform', 'distance'],   # 가중치 여부: uniform - 모든 이웃에게 동일한 영향력 / distance - 가까운 이웃에게 더 높은 영향력
+    'metric': ['euclidean', 'manhattan']  # 거리 계산 방식: euclidean - 직선 거리 / manhattan: 격자식 거리
 }
 
 grid_search = GridSearchCV(
@@ -38,7 +38,8 @@ grid_search = GridSearchCV(
     cv=5,
     scoring='f1',
     n_jobs=-1,
-    verbose=1
+    verbose=1,
+    return_train_score=True
 )
 grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
@@ -55,7 +56,7 @@ print(f"[KNN] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}")
 
 # 6. Confusion Matrix
 ConfusionMatrixDisplay.from_estimator(
-    estimator=grid_search.best_estimator_,
+    estimator=best_model,
     X=X_test,
     y=y_test,
     display_labels=['Beginner', 'Advanced'],

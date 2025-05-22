@@ -17,8 +17,8 @@ print(f"[정보] 총 데이터 수: {len(df)}개 샘플")
 
 # 2. Feature / Label 분리 및 정규화
 X_raw = df.drop(['id', 'label'], axis=1)
-y = LabelEncoder().fit_transform(df['label']) # 0 비숙련자 / 1 숙련자
 X = StandardScaler().fit_transform(X_raw)
+y = LabelEncoder().fit_transform(df['label']) # 0: 비숙련자 / 1: 숙련자
 
 # 3. 학습/테스트 분할
 X_train, X_test, y_train, y_test = train_test_split(
@@ -27,19 +27,19 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # 4. SVM + GridSearchCV
 param_grid_svm = {
-    'C': [0.01, 0.1, 1, 10, 100],
-    'kernel': ['linear', 'rbf'],
-    'gamma': ['scale', 'auto', 0.01, 0.001]
+    'C': [0.01, 0.1, 1, 10, 100],           # 오류를 얼마나 허용할지 조절하는 규제 강도: 값이 작을수록 규제가 강해 과소적합 가능성 있음 / 과적합
+    'kernel': ['linear', 'rbf'],            # 결정 경계 방식: linear - 선형 / rbf - 가우시안 커널로 비선형
+    'gamma': ['scale', 'auto', 0.01, 0.001] # 커널 함수의 영향 범위 조절(rbf) 클수록 데이터에 민감
 }
 
 grid_search = GridSearchCV(
-    estimator=SVC(probability=True, random_state=42),
+    estimator=SVC(probability=True, random_state=42), # probability: 확률값 출력
     param_grid=param_grid_svm,
-    cv=5,                       # 더 신뢰도 높은 교차검증
-    scoring='f1',               # 또는 'f1_macro' if 다중 클래스/불균형
-    n_jobs=-1,                  # 병렬 처리
-    verbose=2,                  # 학습 상태 출력 (선택)
-    return_train_score=True     # 과적합 분석 가능 (선택)
+    cv=5,
+    scoring='f1',
+    n_jobs=-1,
+    verbose=1,
+    return_train_score=True
 )
 grid_search.fit(X_train, y_train)
 best_model = grid_search.best_estimator_
@@ -56,7 +56,7 @@ print(f"[SVM] Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}")
 
 # 6. Confusion Matrix
 ConfusionMatrixDisplay.from_estimator(
-    estimator=grid_search.best_estimator_,
+    estimator=best_model,
     X=X_test,
     y=y_test,
     display_labels=['Beginner', 'Advanced'],
