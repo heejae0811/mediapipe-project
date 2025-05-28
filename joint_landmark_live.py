@@ -2,7 +2,7 @@ import cv2
 import mediapipe as mp
 
 # 설정
-VIDEO_PATH = "./videos/climbing10.mov"
+VIDEO_PATH = "./videos/climbing30.mov"
 
 # Mediapipe 초기화
 mp_pose = mp.solutions.pose
@@ -18,7 +18,7 @@ while cap.isOpened():
         break
 
     # 회전 보정 (필요한 경우만 사용)
-    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
     image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = pose.process(image_rgb)

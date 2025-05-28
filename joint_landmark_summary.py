@@ -37,10 +37,10 @@ print(summary_df.to_string(index=False))
 # 그래프 출력
 plt.figure(figsize=(12, max(6, len(summary_df) * 0.3)))
 plt.bar(summary_df["Landmark_Name"], summary_df["Mean_Visibility"])
-plt.title("Total Joint Mean Visibility (Excluding Face, Including Nose)")
+plt.title("Total Joint Mean Visibility")
 plt.xlabel("Landmark")
 plt.ylabel("Mean Visibility")
-plt.xticks(rotation=90, fontsize=8)
+plt.xticks(rotation=45, fontsize=8)
 plt.tight_layout()
 plt.grid(axis='y', linestyle='--', alpha=0.5)
 

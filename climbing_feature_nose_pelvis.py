@@ -5,9 +5,9 @@ import cv2
 import os
 
 # 설정
-VIDEO_PATH = "./videos/climbing20.mov"
+VIDEO_PATH = "./videos/climbing30.mov"
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
-LABEL = 0  # 숙련자(1) / 비숙련자(0)
+LABEL = 1  # 비숙련자(0) / 숙련자(1)
 OUTPUT_CSV = f"features_{FILE_ID}.csv"
 
 TARGET_IDX = {
@@ -17,7 +17,6 @@ TARGET_IDX = {
 }
 
 FRAME_INTERVAL = 1
-FPS = 30
 
 # Mediapipe Pose 초기화
 mp_pose = mp.solutions.pose
@@ -25,6 +24,12 @@ pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5)
 
 # 비디오 열기
 cap = cv2.VideoCapture(VIDEO_PATH)
+if not cap.isOpened():
+    raise IOError(f"Cannot open video: {VIDEO_PATH}")
+
+actual_fps = cap.get(cv2.CAP_PROP_FPS)
+print(f"Actual FPS: {actual_fps}")
+
 frame_idx = 0
 
 # landmark 좌표 저장
@@ -50,7 +55,6 @@ while cap.isOpened():
             pelvis_x = (left_hip.x + right_hip.x) / 2
             pelvis_y = (left_hip.y + right_hip.y) / 2
 
-            # 저장
             trajectory["nose"]["x"].append(nose.x)
             trajectory["nose"]["y"].append(nose.y)
             trajectory["pelvis"]["x"].append(pelvis_x)
@@ -96,7 +100,7 @@ def compute_metrics(x_list, y_list, fps):
 # 데이터 정리
 row_data = {"id": FILE_ID, "label": LABEL}
 for name in ["nose", "pelvis"]:
-    metrics = compute_metrics(trajectory[name]["x"], trajectory[name]["y"], FPS)
+    metrics = compute_metrics(trajectory[name]["x"], trajectory[name]["y"], actual_fps)
     for k, v in metrics.items():
         row_data[f"{name}_{k}"] = v
 

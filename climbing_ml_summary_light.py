@@ -18,7 +18,8 @@ def data_processing():
     df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
-    X_raw = df.drop(['id', 'label'], axis=1)
+    selected_features = ['nose_speed_mean', 'nose_acceleration_max', 'pelvis_speed_mean', 'pelvis_acceleration_max']
+    X_raw = df[selected_features]
     X = StandardScaler().fit_transform(X_raw)
     y = LabelEncoder().fit_transform(df['label'])
 
@@ -32,45 +33,42 @@ def get_models():
             'estimator': DecisionTreeClassifier(random_state=42),
             'param_grid': {
                 'criterion': ['gini', 'entropy'],
-                'max_depth': [3, 5, 10, 15],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 5],
-                'class_weight': [None, 'balanced']
+                'max_depth': [3, 4, 5],
+                'min_samples_leaf': [1, 2],
+                'class_weight': ['balanced']
             }
         },
         'Random Forest': {
             'estimator': RandomForestClassifier(random_state=42),
             'param_grid': {
-                'n_estimators': [100, 200, 300],
-                'criterion': ['gini', 'entropy'],
-                'max_depth': [None, 5, 10, 20],
-                'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2, 5],
-                'class_weight': [None, 'balanced']
+                'n_estimators': [50, 100],
+                'max_depth': [5, 10],
+                'min_samples_leaf': [1, 2],
+                'class_weight': ['balanced']
             }
         },
         'KNN': {
             'estimator': KNeighborsClassifier(),
             'param_grid': {
-                'n_neighbors': [3, 5, 7, 9],
+                'n_neighbors': [3, 5],
                 'weights': ['uniform', 'distance'],
-                'metric': ['euclidean', 'manhattan']
+                'metric': ['euclidean']
             }
         },
         'SVM': {
             'estimator': SVC(probability=True, random_state=42),
             'param_grid': {
-                'C': [0.01, 0.1, 1, 10, 100],
+                'C': [0.1, 1],
                 'kernel': ['linear', 'rbf'],
-                'gamma': ['scale', 'auto', 0.01, 0.001]
+                'gamma': ['scale', 'auto']
             }
         },
         'Logistic Regression': {
             'estimator': LogisticRegression(max_iter=1000, random_state=42),
             'param_grid': {
-                'C': [0.01, 0.1, 1, 10, 100],
+                'C': [0.1, 1],
                 'penalty': ['l2'],
-                'solver': ['liblinear', 'lbfgs']
+                'solver': ['liblinear']
             }
         }
     }
@@ -127,7 +125,7 @@ def plot_learning_curve(model_name, model_estimator, X_train, y_train):
         X=X_train,
         y=y_train,
         train_sizes=np.linspace(0.1, 1.0, 5),
-        cv=5,
+        cv=3,
         scoring='accuracy',
         shuffle=True,
         random_state=42
