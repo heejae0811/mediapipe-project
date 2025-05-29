@@ -1,3 +1,4 @@
+import os
 import glob
 import numpy as np
 import pandas as pd
@@ -12,13 +13,15 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
 
+result_summary = []
+
 # 1. 데이터 전처리 함수
 def data_processing():
     csv_files = glob.glob('./data/features_*.csv')
     df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
-    selected_features = ['nose_speed_mean', 'nose_acceleration_max', 'pelvis_speed_mean', 'pelvis_acceleration_max']
+    selected_features = ['pelvis_speed_mean', 'pelvis_speed_max', 'pelvis_velocity_mean', 'pelvis_velocity_max']
     X_raw = df[selected_features]
     X = StandardScaler().fit_transform(X_raw)
     y = LabelEncoder().fit_transform(df['label'])
@@ -170,17 +173,25 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
     print('Classification Report:\n', classification_report(y_test, y_pred, digits=5, zero_division=0))
     print(f'Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}')
 
-    # 함수 호출
+    report = classification_report(y_test, y_pred, output_dict=True, digits=5, zero_division=0)
+    result_summary.append({
+        'Model': model_name,
+        'Best Parameters': str(grid_search.best_params_),
+        'Best F1 (CV Mean)': round(grid_search.best_score_, 5),
+        'Balanced Accuracy': round(balanced_accuracy_score(y_test, y_pred), 5),
+        'Precision': round(report['macro avg']['precision'], 5),
+        'Recall': round(report['macro avg']['recall'], 5),
+        'F1-score': round(report['macro avg']['f1-score'], 5),
+        'Support': int(report['macro avg']['support'])
+    })
+
     plot_confusion_matrix(model_name, best_model, X_test, y_test)
     plot_roc_curve(model_name, y_test, y_proba)
 
-    # 중요도 시각화
     if hasattr(best_model, 'feature_importances_'):
-        # Tree 기반 모델
         importances = best_model.feature_importances_
         indices = np.argsort(importances)[::-1]
         features = X_raw.columns[indices]
-
         plt.figure(figsize=(12, 6))
         plt.bar(range(len(features)), importances[indices], align='center')
         plt.xticks(range(len(features)), features, rotation=45, ha='right', fontsize=10)
@@ -190,22 +201,19 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
         plt.tight_layout()
         plt.show()
     else:
-        # Tree 기반이 아닌 모델
         result = permutation_importance(
             estimator=best_model,
             X=X_test,
             y=y_test,
-            scoring='roc_auc',  # 또는 'accuracy', 'f1' 등으로 변경 가능
+            scoring='roc_auc',
             n_repeats=30,
             random_state=42,
             n_jobs=-1
         )
-
         importances = result.importances_mean
         stds = result.importances_std
         indices = np.argsort(importances)[::-1]
         features = X_raw.columns[indices]
-
         plt.figure(figsize=(12, 6))
         plt.bar(range(len(features)), importances[indices], yerr=stds[indices], align='center')
         plt.xticks(range(len(features)), features, rotation=45, ha='right', fontsize=10)
@@ -215,7 +223,6 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
         plt.tight_layout()
         plt.show()
 
-    # 함수 호출
     train_score = best_model.score(X_train, y_train)
     test_score = best_model.score(X_test, y_test)
     plot_accuracy_bar(model_name, train_score, test_score)
@@ -226,8 +233,12 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
 if __name__ == '__main__':
     df, X_raw, X, y = data_processing()
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-
     models = get_models()
 
     for model_name, model_info in models.items():
         run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw)
+
+    # 6. csv 저장
+    os.makedirs('result', exist_ok=True)
+    pd.DataFrame(result_summary).to_csv('./results/ml_evaluation.csv', index=False, encoding='utf-8-sig')
+    print('\ncsv가 저장되었습니다.')
