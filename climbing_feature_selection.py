@@ -62,17 +62,17 @@ plt.show()
 # 상관계수 0.95 이상만 그래프
 results_df = pd.DataFrame(results)
 high_corrs = results_df[
-    (results_df['상관계수'].abs() >= 0.95) &
+    (results_df['상관계수'].abs() >= 0.9) &
     (results_df['변수1'] != results_df['변수2'])
 ]
 
-plt.figure(figsize=(12, 6))
+plt.figure(figsize=(14, 10))
 plt.barh(
     [f"{row['변수1']} ↔ {row['변수2']}" for _, row in high_corrs.iterrows()],
     high_corrs['상관계수'],
 )
 plt.xlabel("Correlation")
-plt.title("Correlation ≥ 0.95")
+plt.title("Correlation ≥ 0.9")
 plt.grid(axis='x')
 plt.tight_layout()
 plt.show()

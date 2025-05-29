@@ -21,7 +21,7 @@ def data_processing():
     df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
-    selected_features = ['pelvis_speed_mean', 'pelvis_speed_max', 'pelvis_velocity_mean', 'pelvis_velocity_max']
+    selected_features = ['pelvis_velocity_mean', 'pelvis_jerk_max', 'nose_velocity_mean', 'nose_jerk_max']
     X_raw = df[selected_features]
     X = StandardScaler().fit_transform(X_raw)
     y = LabelEncoder().fit_transform(df['label'])
