@@ -5,7 +5,7 @@ import mediapipe as mp
 mp_pose = mp.solutions.pose
 
 # 영상 열기
-cap = cv2.VideoCapture("videos/climbing01.mov")
+cap = cv2.VideoCapture("../videos/climbing01.mov")
 
 # 골반 이동 경로를 저장할 리스트
 hip_trail = []

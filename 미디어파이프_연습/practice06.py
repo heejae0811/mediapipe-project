@@ -6,7 +6,7 @@ import pandas as pd
 mp_pose = mp.solutions.pose
 
 # 영상 열기
-cap = cv2.VideoCapture("videos/climbing13.mov")
+cap = cv2.VideoCapture("../videos/climbing13.mov")
 
 # 프레임 시간 계산
 fps = cap.get(cv2.CAP_PROP_FPS)
