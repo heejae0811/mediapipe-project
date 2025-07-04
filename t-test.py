@@ -1,61 +1,43 @@
 import glob
 import pandas as pd
-from scipy.stats import shapiro, levene, ttest_ind, mannwhitneyu
+from scipy.stats import ttest_ind
 
-# 1) 파일 목록
-novice_files   = glob.glob('./csv_variability/novice/*.csv')
-advanced_files = glob.glob('./csv_variability/advanced/*.csv')
+# 파일 불러오기
+file_paths = glob.glob('./data/features_climbing*.csv')  # ← 폴더 경로에 맞게 수정
+df_list = [pd.read_csv(f) for f in file_paths]
+df = pd.concat(df_list, ignore_index=True)
 
-# 2) 데이터 불러오기
-df_list = []
-for fp in novice_files:
-    df = pd.read_csv(fp); df['group']='novice'; df_list.append(df)
-for fp in advanced_files:
-    df = pd.read_csv(fp); df['group']='advanced'; df_list.append(df)
-df_all = pd.concat(df_list, ignore_index=True)
+# 라벨 나누기
+g0 = df[df['label'] == 0]
+g1 = df[df['label'] == 1]
+print(f"✔ 그룹0 샘플 수: {len(g0)}, 그룹1 샘플 수: {len(g1)}")
 
-metrics   = ['x_variability', 'y_variability', 'z_variability']
-landmarks = sorted(df_all['landmark_index'].unique())
+# 변수 추출
+features = [
+    col for col in df.columns
+    if col not in ['id', 'label'] and pd.api.types.is_numeric_dtype(df[col])
+]
+print(f"✔ 분석할 피처 {len(features)}개: {features}")
 
+# t-test
 results = []
-for lm in landmarks:
-    sub = df_all[df_all['landmark_index']==lm]
-    nov = sub[sub['group']=='novice']
-    adv = sub[sub['group']=='advanced']
+for feat in features:
+    x0 = g0[feat].dropna()
+    x1 = g1[feat].dropna()
+    if len(x0) < 2 or len(x1) < 2:
+        continue  # 샘플 수 부족하면 건너뜀
 
-    for m in metrics:
-        data1 = nov[m].dropna()
-        data2 = adv[m].dropna()
-        # 1) 정규성 검정
-        p1 = shapiro(data1).pvalue
-        p2 = shapiro(data2).pvalue
-        normal = (p1>0.05 and p2>0.05)
+    t_stat, p_val = ttest_ind(x0, x1, equal_var=False)
+    results.append({
+        'feature': feat,
+        't_statistic': t_stat,
+        'p_value': p_val
+    })
 
-        # 2) 등분산 검정
-        p_levene = levene(data1, data2).pvalue
-        equal_var = (p_levene>0.05)
-
-        # 3) 적절한 그룹 비교
-        if normal:
-            # 정규분포이면 t-검정
-            stat, p = ttest_ind(data1, data2, equal_var=equal_var)
-            test_name = 't-test (Welch)' if not equal_var else 't-test'
-        else:
-            # 비정규 분포이면 비모수 검정
-            stat, p = mannwhitneyu(data1, data2)
-            test_name = 'Mann-Whitney U'
-
-        results.append({
-            'landmark_index': lm,
-            'metric': m,
-            'test': test_name,
-            'statistic': stat,
-            'p_value': p,
-            'normal_p1': p1,
-            'normal_p2': p2,
-            'levene_p': p_levene
-        })
-
-res_df = pd.DataFrame(results)
-res_df.to_csv('ttest_with_checks.csv', index=False, encoding='utf-8-sig')
+# 결과 출력
+res_df = pd.DataFrame(results).sort_values('p_value')
 print(res_df)
+
+# CSV 저장
+res_df.to_csv('./t_test_results.csv', index=False)
+print("✅ t-test 결과를 './t_test_results.csv' 에 저장했습니다.")
