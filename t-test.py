@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.stats import ttest_ind
 
 # 파일 불러오기
-file_paths = glob.glob('./data/features_climbing*.csv')  # ← 폴더 경로에 맞게 수정
+file_paths = glob.glob('./csv_jerk/features_climbing*.csv')  # ← 폴더 경로에 맞게 수정
 df_list = [pd.read_csv(f) for f in file_paths]
 df = pd.concat(df_list, ignore_index=True)
 
@@ -39,5 +39,5 @@ res_df = pd.DataFrame(results).sort_values('p_value')
 print(res_df)
 
 # CSV 저장
-res_df.to_csv('./t_test_results.csv', index=False)
-print("✅ t-test 결과를 './t_test_results.csv' 에 저장했습니다.")
+res_df.to_csv('./t_test_jerk_results.csv', index=False)
+print("✅ t-test 결과를 './t_test_jerk_results.csv' 에 저장했습니다.")
