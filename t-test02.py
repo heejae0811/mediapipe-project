@@ -1,7 +1,6 @@
 import glob
 import pandas as pd
 from scipy.stats import ttest_ind, shapiro, levene, mannwhitneyu
-import numpy as np
 
 novice_files   = glob.glob('./csv_variability/novice/*.csv')
 advanced_files = glob.glob('./csv_variability/advanced/*.csv')
@@ -34,7 +33,7 @@ df_wide = df_all.pivot_table(
 df_wide.columns = [f"{var}_landmark{lm}" for var, lm in df_wide.columns]
 df_wide = df_wide.reset_index()
 
-print(f"✅ 데이터 shape: {df_wide.shape}")
+print(f"데이터 shape: {df_wide.shape}")
 
 # 그룹 분리
 g0 = df_wide[df_wide['group'] == 'novice']
