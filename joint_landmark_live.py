@@ -3,8 +3,8 @@ import mediapipe as mp
 import os
 
 # 설정
-VIDEO_PATH = "./videos/joint_live02.mov"
-OUTPUT_PATH = "joint_live02.mp4"
+VIDEO_PATH = "./videos/.mov"
+OUTPUT_PATH = ".mp4"
 
 # 영상 열기
 cap = cv2.VideoCapture(VIDEO_PATH)

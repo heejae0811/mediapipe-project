@@ -33,3 +33,19 @@ LIME
 더클 빨강 이하: 비숙련자
 
 설문조사: CAS-20
+
+
+- Feature Selection
+
+filter / wrapper / embedded
+
+t-test로 유의한 차이가 나는 변수 구하기
+correlation 0.85 이상으로 선택된 변수 중 선행 연구나 raw data를 기준으로 선택하기
+
+랜덤포레스트 / xgboost
+
+rfecv: 전체 피처를 다 넣어보고 하나의 변수를 제거하는 방식으로 정확도가 크게 떨어지는 변수가 있다면 그 변수를 중요한 변수로 선정
+
+전체 변수를 PCA(비지도학습) 시켜서 어떤 클러스터로 묶이는지 확인
+
+여러가지 feature selection 방식을 통해 중복되는 변수를 최정 머신러닝 변수로 선정한다.
