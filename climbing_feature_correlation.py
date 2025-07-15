@@ -6,7 +6,7 @@ import seaborn as sns
 from scipy.stats import shapiro, levene, pearsonr, spearmanr
 
 # CSV 불러오기
-csv_files = glob.glob('./data/features_climbing*.csv')
+csv_files = glob.glob('./csv_features/*.csv')
 df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
 metrics = df.columns.drop(['id', 'label'])
 correlation_matrix = pd.DataFrame(index=metrics, columns=metrics, dtype=float)

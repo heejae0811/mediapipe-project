@@ -3,8 +3,18 @@ import pandas as pd
 from scipy.stats import ttest_ind, mannwhitneyu, shapiro, levene
 import numpy as np
 
+# 📁 Mediapipe 33개 관절 이름
+landmark_names = [
+    "nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye",
+    "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder",
+    "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky",
+    "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip",
+    "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel",
+    "right_heel", "left_foot_index", "right_foot_index"
+]
+
 # 파일 불러오기
-file_paths = glob.glob('./csv_nose_pelvis/features_climbing*.csv')
+file_paths = glob.glob('./csv_features/*.csv')
 df_list = [pd.read_csv(f) for f in file_paths]
 df = pd.concat(df_list, ignore_index=True)
 
@@ -59,8 +69,19 @@ for feat in features:
     n_total = len(x0) + len(x1)
     r_norm = r_raw / np.sqrt(n_total)  # 정규화된 r_effect
 
+    # landmark 이름 매칭
+    try:
+        landmark_index = int(feat.split('_')[0].replace('landmark', ''))
+        if 0 <= landmark_index < 33:
+            landmark_name = landmark_names[landmark_index]
+        else:
+            landmark_name = 'unknown'
+    except:
+        landmark_name = 'unknown'
+
     results.append({
         'feature': feat,
+        'landmark_name': landmark_name,
         'test': test_name,
         'statistic': stat,
         'p_value': p_val,
@@ -78,5 +99,5 @@ res_df = pd.DataFrame(results).sort_values('p_value')
 print(res_df)
 
 # CSV로 저장
-res_df.to_csv('./t_test_nose_pelvis_results.csv', index=False)
-print("✅ 결과가 './t_test_nose_pelvis_results.csv' 에 저장되었습니다.")
+res_df.to_csv('./t_test_results_with_landmark_names.csv', index=False)
+print("\n✅ 결과가 './t_test_results_with_landmark_names.csv'에 저장되었습니다.")

@@ -1,62 +1,48 @@
-import cv2
-import numpy as np
 import pandas as pd
-import mediapipe as mp
+import glob
 
-# 설정
-VIDEO_PATH = "./videos/climbing01.mov"  # 사용할 비디오 파일 경로
-OUTPUT_CSV = "joint_visibility01.csv"  # 저장할 CSV 파일명
-FRAME_INTERVAL = 3  # 3프레임마다 분석
+# 1. 파일 경로 설정
+file_paths = glob.glob("./csv_features/*.csv")
 
-# Mediapipe Pose 초기화
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5)
+# 2. visibility 컬럼만 추출해서 합치기
+df_list = []
+for file in file_paths:
+    df = pd.read_csv(file)
+    # visibility 컬럼만 선택
+    vis_cols = [col for col in df.columns if 'visibility' in col]
+    df_vis = df[vis_cols]
+    df_list.append(df_vis)
 
-# 비디오 열기
-cap = cv2.VideoCapture(VIDEO_PATH)
+# 3. 모든 파일의 데이터프레임을 하나로 합치기
+df_all = pd.concat(df_list, ignore_index=True)
 
-# visibility 저장용 리스트
-visibility_list = []
-frame_idx = 0
+# 4. 각 관절별 전체 평균 계산
+mean_visibilities = df_all.mean().sort_values(ascending=False)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+# 5. Series → DataFrame
+df_mean = mean_visibilities.reset_index()
+df_mean.columns = ['landmark', 'mean_visibility']
 
-    if frame_idx % FRAME_INTERVAL == 0:
-        image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = pose.process(image_rgb)
+# 6. landmark 번호 추출
+df_mean['landmark_index'] = df_mean['landmark'].str.extract(r'(\d+)').astype(int)
 
-        if results.pose_landmarks:
-            frame_vis = [lm.visibility for lm in results.pose_landmarks.landmark]
-            visibility_list.append(frame_vis)
+# 7. Mediapipe landmark 이름 리스트
+landmark_names = [
+    "nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye",
+    "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder",
+    "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky",
+    "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip",
+    "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel",
+    "right_heel", "left_foot_index", "right_foot_index"
+]
 
-    frame_idx += 1
+# 8. 이름 매칭
+df_mean['landmark_name'] = df_mean['landmark_index'].apply(lambda x: landmark_names[x])
 
-cap.release()
-pose.close()
+# 9. 열 순서 정리
+df_mean = df_mean[['landmark', 'landmark_name', 'mean_visibility']]
 
-# numpy 배열로 변환 (프레임 수, 33)
-visibility_array = np.array(visibility_list)
+# 10. CSV로 저장
+df_mean.to_csv("joint_landmark_visibility_mean.csv", index=False)
 
-# 관절별 평균 visibility 계산
-mean_visibility = np.mean(visibility_array, axis=0)
-
-# 관절 이름 가져오기 (Mediapipe PoseLandmark 활용)
-landmark_names = [mp_pose.PoseLandmark(i).name.lower() for i in range(33)]
-
-# 결과 정리
-df_visibility = pd.DataFrame({
-    "Landmark_Index": list(range(33)),
-    "Landmark_Name": landmark_names,
-    "Mean_Visibility": mean_visibility
-}).sort_values(by="Mean_Visibility", ascending=False)
-
-# 터미널 출력
-print("\n전체 영상 기준 관절 인식률 Mean Visibility 순")
-print(df_visibility.to_string(index=False))
-
-# CSV로 저장
-df_visibility.to_csv(OUTPUT_CSV, index=False, encoding="utf-8-sig")
-print(f"\n관절 visibility 분석 결과가 '{OUTPUT_CSV}' 파일로 저장되었습니다.")
+print("\n✅ joint_landmark_visibility_mean.csv 저장 완료")

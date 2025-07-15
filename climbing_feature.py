@@ -6,7 +6,7 @@ import os
 
 # 설정
 LABEL = 1  # 초기영상 0 / 최근영상 1
-VIDEO_PATH = "./videos/03_김민지_1.mov"
+VIDEO_PATH = "./videos/47_전해빈_1_250708.mov"
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_CSV = f"./csv_features/{FILE_ID}.csv"
 FRAME_INTERVAL = 1
@@ -100,4 +100,4 @@ os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
 motion_df = pd.DataFrame([row_data])
 motion_df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8-sig")
 
-print(f"✅ Feature 추출 완료: '{OUTPUT_CSV}' 저장됨")
+print(f"✅ Feature 추출 완료: '{OUTPUT_CSV}' 저장")
