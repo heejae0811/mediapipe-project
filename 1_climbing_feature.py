@@ -6,9 +6,9 @@ import os
 
 # 설정
 LABEL = 1  # 초기영상 0 / 최근영상 1
-VIDEO_PATH = "./videos/47_전해빈_1_250708.mov"
+VIDEO_PATH = './videos/54__1_250531.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
-OUTPUT_CSV = f"./csv_features/{FILE_ID}.csv"
+OUTPUT_CSV = f'./csv_features/{FILE_ID}.csv'
 FRAME_INTERVAL = 1
 
 # Mediapipe Pose 초기화
@@ -18,7 +18,7 @@ pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5)
 # 비디오 열기
 cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
-    raise IOError(f"Cannot open video: {VIDEO_PATH}")
+    raise IOError(f'Cannot open video: {VIDEO_PATH}')
 
 actual_fps = cap.get(cv2.CAP_PROP_FPS)
 frame_idx = 0
@@ -82,22 +82,22 @@ def compute_motion_metrics(x_list, y_list, visibility_list, fps):
     return [accel_max, accel_min, accel_mean, normalized_jerk, visibility_mean]
 
 # 데이터 정리
-row_data = {"id": FILE_ID, "label": LABEL}
+row_data = {'id': FILE_ID, 'label': LABEL}
 
 for idx in range(33):
     accel_max, accel_min, accel_mean, normalized_jerk, visibility_mean = compute_motion_metrics(
-        trajectory[idx]["x"], trajectory[idx]["y"], trajectory[idx]["visibility"], actual_fps
+        trajectory[idx]['x'], trajectory[idx]['y'], trajectory[idx]['visibility'], actual_fps
     )
 
-    row_data[f"landmark{idx}_accel_max"] = accel_max
-    row_data[f"landmark{idx}_accel_min"] = accel_min
-    row_data[f"landmark{idx}_accel_mean"] = accel_mean
-    row_data[f"landmark{idx}_normalized_jerk"] = normalized_jerk
-    row_data[f"landmark{idx}_visibility_mean"] = visibility_mean
+    row_data[f'landmark{idx}_accel_max'] = accel_max
+    row_data[f'landmark{idx}_accel_min'] = accel_min
+    row_data[f'landmark{idx}_accel_mean'] = accel_mean
+    row_data[f'landmark{idx}_normalized_jerk'] = normalized_jerk
+    row_data[f'landmark{idx}_visibility_mean'] = visibility_mean
 
 # CSV 저장
 os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
 motion_df = pd.DataFrame([row_data])
-motion_df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8-sig")
+motion_df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8-sig')
 
 print(f"✅ Feature 추출 완료: '{OUTPUT_CSV}' 저장")

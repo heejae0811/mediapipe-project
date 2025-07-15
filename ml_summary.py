@@ -14,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 
 # 1. 데이터 전처리 함수
 def data_processing():
-    csv_files = glob.glob('./data/features_*.csv')
+    csv_files = glob.glob('./csv_features/*.csv')
     df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 

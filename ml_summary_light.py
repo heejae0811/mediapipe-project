@@ -17,12 +17,11 @@ result_summary = []
 
 # 1. 데이터 전처리 함수
 def data_processing():
-    csv_files = glob.glob('./data/features_*.csv')
+    csv_files = glob.glob('./csv_features/*.csv')
     df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
-    selected_features = ['pelvis_velocity_mean', 'pelvis_jerk_max', 'nose_velocity_mean', 'nose_jerk_max']
-    X_raw = df[selected_features]
+    X_raw = df.drop(['id', 'label'], axis=1)
     X = StandardScaler().fit_transform(X_raw)
     y = LabelEncoder().fit_transform(df['label'])
 

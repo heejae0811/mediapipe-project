@@ -3,30 +3,30 @@ import pandas as pd
 from scipy.stats import ttest_ind, mannwhitneyu, shapiro, levene
 import numpy as np
 
-# 📁 Mediapipe 33개 관절 이름
-landmark_names = [
-    "nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye",
-    "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder",
-    "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky",
-    "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip",
-    "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel",
-    "right_heel", "left_foot_index", "right_foot_index"
-]
-
 # 파일 불러오기
-file_paths = glob.glob('./csv_features/*.csv')
-df_list = [pd.read_csv(f) for f in file_paths]
+csv_files = glob.glob('./csv_features/*.csv')
+df_list = [pd.read_csv(f) for f in csv_files]
 df = pd.concat(df_list, ignore_index=True)
 
 # 그룹 분리
 g0 = df[df['label'] == 0]
 g1 = df[df['label'] == 1]
-print(f"✔ 그룹0 샘플 수: {len(g0)}, 그룹1 샘플 수: {len(g1)}")
+print(f'✔ 그룹0 샘플 수: {len(g0)}, 그룹1 샘플 수: {len(g1)}')
 
 # 분석할 피처
 features = [
     col for col in df.columns
     if col not in ['id', 'label'] and pd.api.types.is_numeric_dtype(df[col])
+]
+
+# Mediapipe 33개 관절 이름
+landmark_names = [
+    'nose', 'left_eye_inner', 'left_eye', 'left_eye_outer', 'right_eye_inner', 'right_eye',
+    'right_eye_outer', 'left_ear', 'right_ear', 'mouth_left', 'mouth_right', 'left_shoulder',
+    'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist', 'left_pinky',
+    'right_pinky', 'left_index', 'right_index', 'left_thumb', 'right_thumb', 'left_hip',
+    'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_heel',
+    'right_heel', 'left_foot_index', 'right_foot_index'
 ]
 
 results = []
@@ -98,6 +98,7 @@ res_df = pd.DataFrame(results).sort_values('p_value')
 # 결과 출력
 print(res_df)
 
-# CSV로 저장
-res_df.to_csv('./t_test_results_with_landmark_names.csv', index=False)
-print("\n✅ 결과가 './t_test_results_with_landmark_names.csv'에 저장되었습니다.")
+# 엑셀 저장
+res_df.to_excel('./result/ttest_analysis.xlsx', index=False)
+print(f'✅ 총 {len(csv_files)}개의 파일을 분석했습니다.')
+print('✅ 엑셀 파일 저장 완료')
