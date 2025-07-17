@@ -1,7 +1,7 @@
 import glob
+import numpy as np
 import pandas as pd
 from scipy.stats import ttest_ind, mannwhitneyu, shapiro, levene
-import numpy as np
 
 # 파일 불러오기
 csv_files = glob.glob('./csv_features/*.csv')
