@@ -14,18 +14,20 @@ landmark_names = [
     'right_heel', 'left_foot_index', 'right_foot_index'
 ]
 
-# t-test
 def t_test(df, sheet_name):
+    # 그룹 분리
     g0 = df[df['label'] == 0]
     g1 = df[df['label'] == 1]
     print(f'[{sheet_name}] 그룹0: {len(g0)}, 그룹1: {len(g1)}')
 
+    # 분석할 피처
     features = [
         col for col in df.columns
         if col not in ['id', 'label'] and pd.api.types.is_numeric_dtype(df[col])
     ]
 
     results = []
+
     for feat in features:
         x0 = g0[feat].dropna()
         x1 = g1[feat].dropna()
@@ -49,16 +51,16 @@ def t_test(df, sheet_name):
 
         p_val = np.nan
         ci_low, ci_high = np.nan, np.nan
-        test_method = ""
+        test_method = ''
 
         # 테스트 선택
         if normal:
             if equal_var:
                 stat, p_val = ttest_ind(x0, x1, equal_var=True)
-                test_method = "Independent t-test"
+                test_method = 'Independent t-test'
             else:
                 stat, p_val = ttest_ind(x0, x1, equal_var=False)
-                test_method = "Welch t-test"
+                test_method = 'Welch t-test'
 
             n0, n1 = len(x0), len(x1)
             se_diff = np.sqrt(x0.var(ddof=1)/n0 + x1.var(ddof=1)/n1)
@@ -66,19 +68,19 @@ def t_test(df, sheet_name):
             ci_high = mean_diff + 1.96 * se_diff
         else:
             stat, p_val = mannwhitneyu(x0, x1, alternative='two-sided')
-            test_method = "Mann–Whitney U"
+            test_method = 'Mann–Whitney U'
 
-        ci_str = f"[{ci_low:.3f}, {ci_high:.3f}]" if normal else "N/A"
+        ci_str = f'[{ci_low:.3f}, {ci_high:.3f}]' if normal else 'N/A'
 
         # landmark 이름 매핑
         try:
-            idx = int(feat.replace("landmark", "").split("_")[0])
+            idx = int(feat.replace('landmark', '').split('_')[0])
             if 0 <= idx < len(landmark_names):
                 landmark_name = landmark_names[idx]
             else:
-                landmark_name = "unknown"
+                landmark_name = 'unknown'
         except:
-            landmark_name = "unknown"
+            landmark_name = 'unknown'
 
         results.append({
             'feature': feat,
@@ -92,7 +94,7 @@ def t_test(df, sheet_name):
     if results:
         return pd.DataFrame(results).sort_values('p_value')
     else:
-        print(f"⚠️ [{sheet_name}] 유효한 feature가 없습니다.")
+        print(f'⚠️ [{sheet_name}] 유효한 feature가 없습니다.')
         return pd.DataFrame()
 
 # 모든 파일의 시트1/시트2를 모으기
@@ -109,11 +111,11 @@ for file in xlsx_files:
 df_sheet1 = pd.concat(df_sheet1_all, ignore_index=True)
 df_sheet2 = pd.concat(df_sheet2_all, ignore_index=True)
 
-# 분석
+# t_test 함수 실행
 res1 = t_test(df_sheet1, 'Sheet1')
 res2 = t_test(df_sheet2, 'Sheet2')
 
-# 저장
+# 엑셀 저장
 os.makedirs('./result', exist_ok=True)
 save_path = './result/ttest_features.xlsx'
 
@@ -121,11 +123,11 @@ with pd.ExcelWriter(save_path) as writer:
     if not res1.empty:
         res1.to_excel(writer, sheet_name='position_ttest', index=False)
     else:
-        pd.DataFrame({"message": ["No valid results"]}).to_excel(writer, sheet_name='position_ttest', index=False)
+        pd.DataFrame({'message': ['No valid results']}).to_excel(writer, sheet_name='position_ttest', index=False)
 
     if not res2.empty:
         res2.to_excel(writer, sheet_name='normalized_position_ttest', index=False)
     else:
-        pd.DataFrame({"message": ["No valid results"]}).to_excel(writer, sheet_name='normalized_position_ttest', index=False)
+        pd.DataFrame({'message': ['No valid results']}).to_excel(writer, sheet_name='normalized_position_ttest', index=False)
 
-print(f"✅ 분석 완료: {save_path}")
+print(f'✅ 분석 완료: {save_path}')

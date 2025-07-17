@@ -45,7 +45,7 @@ while cap.isOpened():
 cap.release()
 pose.close()
 
-# 정규화 (어깨–엉덩이) 계산
+# 정규화 (왼쪽어깨 – 왼쪽엉덩이) 계산
 shoulder_x = np.array(trajectory[11]['x'])  # left_shoulder
 shoulder_y = np.array(trajectory[11]['y'])
 hip_x = np.array(trajectory[23]['x'])       # left_hip
@@ -72,11 +72,11 @@ def compute_displacement_metrics(x_list, y_list, body_size):
         np.min(normalized), np.max(normalized), np.mean(normalized), np.median(normalized), np.std(normalized)
     ]
 
-# 데이터 정리
 pos_data = {'id': FILE_ID, 'label': LABEL}
 norm_data = {'id': FILE_ID, 'label': LABEL}
 vis_data = {'id': FILE_ID, 'label': LABEL}
 
+# 관절별 함수 실행
 for idx in range(33):
     metrics = compute_displacement_metrics(
         trajectory[idx]['x'], trajectory[idx]['y'], mean_body_size
