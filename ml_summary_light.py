@@ -21,7 +21,24 @@ def data_processing():
     df = pd.concat([pd.read_csv(file) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
-    X_raw = df.drop(['id', 'label'], axis=1)
+    # 원하는 변수 지정
+    selected_features = [
+        'landmark0_accel_max',
+        'landmark11_normalized_jerk',
+        'landmark23_accel_max',
+        'landmark0_normalized_jerk',
+        'landmark12_normalized_jerk',
+        'landmark14_accel_mean',
+        'landmark0_accel_min',
+        'landmark11_accel_max',
+        'landmark11_accel_min',
+        'landmark23_normalized_jerk',
+        'landmark12_accel_min',
+        'landmark25_visibility_mean',
+        'landmark24_normalized_jerk'
+    ]
+
+    X_raw = df[selected_features]  # 여기서 선택한 변수만 사용
     X = StandardScaler().fit_transform(X_raw)
     y = LabelEncoder().fit_transform(df['label'])
 

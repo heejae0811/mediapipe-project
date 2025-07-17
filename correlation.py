@@ -21,7 +21,7 @@ metrics = [
        not any(keyword in col for keyword in exclude_keywords)
 ]
 
-# 결과 저장용
+# 결과 저장용여
 results = []
 
 # 정규성, 등분산, 상관계수 계산
@@ -79,6 +79,8 @@ plt.show()
 high_corr = res_df[(res_df['상관계수'].abs() >= 0.9) & (res_df['변수1'] != res_df['변수2'])]
 print(f'✅ 총 {len(csv_files)}개의 파일을 분석했습니다.')
 print(f'\n✅ |r| >= 0.9인 변수쌍 {len(high_corr)}개 발견')
+
+print("0000000", high_corr)
 
 # 결과를 엑셀로 저장
 with pd.ExcelWriter('./result/correlation_analysis.xlsx') as writer:
