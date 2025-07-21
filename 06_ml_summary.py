@@ -15,21 +15,15 @@ from sklearn.linear_model import LogisticRegression
 # 1. 데이터 전처리 함수
 def data_processing():
     csv_files = glob.glob('./features_xlsx/*.xlsx')
-    df = pd.concat([pd.read_excel(file, sheet_name=1) for file in csv_files], ignore_index=True)
+    df = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
     # 원하는 변수 지정
     selected_features = [
-        'landmark24_norm_std',
-        'landmark8_norm_max',
-        'landmark7_norm_max',
-        'landmark25_norm_mean',
-        'landmark5_norm_std',
-        'landmark4_norm_std',
-        'landmark5_norm_max',
-        'landmark31_norm_mean',
-        'landmark23_norm_max',
-        'landmark12_norm_min'
+        'landmark23_std',
+        'landmark23_max',
+        'landmark31_mean',
+        'landmark29_median',
     ]
 
     X_raw = df[selected_features]  # 여기서 선택한 변수만 사용
