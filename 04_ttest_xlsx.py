@@ -117,7 +117,7 @@ res2 = t_test(df_sheet2, 'Sheet2')
 
 # 엑셀 저장
 os.makedirs('./result', exist_ok=True)
-save_path = './result/ttest_features.xlsx'
+save_path = './result/features_ttest.xlsx'
 
 with pd.ExcelWriter(save_path) as writer:
     if not res1.empty:

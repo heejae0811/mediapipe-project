@@ -6,9 +6,9 @@ import os
 
 # 설정
 LABEL = 1
-VIDEO_PATH = './videos/홍규화_1_250710.mov'
+VIDEO_PATH = './videos/_1_250705.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
-OUTPUT_XLSX = f'./csv_feature/{FILE_ID}.xlsx'
+OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1
 
 # Mediapipe Pose 초기화

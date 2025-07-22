@@ -20,10 +20,17 @@ def data_processing():
 
     # 원하는 변수 지정
     selected_features = [
+        'landmark0_max',
         'landmark23_std',
-        'landmark23_max',
-        'landmark31_mean',
-        'landmark29_median',
+        'landmark24_std',
+        'landmark27_max',
+        'landmark25_min',
+        'landmark25_median',
+        'landmark30_min',
+        'landmark12_min',
+        'landmark30_max',
+        'landmark28_min',
+        'landmark24_mean'
     ]
 
     X_raw = df[selected_features]  # 여기서 선택한 변수만 사용

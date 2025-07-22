@@ -10,37 +10,85 @@ excel_files = [f for f in glob.glob('./features_xlsx/*.xlsx') if '~$' not in f]
 output_dir = './result'
 os.makedirs(output_dir, exist_ok=True)
 
-# 관절 인슉률이 좋은  feature들
+# 관절 인슉률이 좋은 feature들
 selected_features = [
-    # 'landmark24_min',
-    # 'landmark24_max',
-    # 'landmark24_mean',
-    # 'landmark24_median',
-    # 'landmark24_std'
-    #
-    # 'landmark23_min',
-    # 'landmark23_max',
-    # 'landmark23_mean',
-    # 'landmark23_median',
-    # 'landmark23_std'
-    #
-    # 'landmark12_min',
-    # 'landmark12_max',
-    # 'landmark12_mean',
-    # 'landmark12_median',
-    # 'landmark12_std'
-    #
-    # 'landmark11_min',
-    # 'landmark11_max',
-    # 'landmark11_mean',
-    # 'landmark11_median',
-    # 'landmark11_std'
-    #
-    # 'landmark0_min',
-    # 'landmark0_max',
-    # 'landmark0_mean',
-    # 'landmark0_median',
-    # 'landmark0_std'
+    'landmark0_min',
+    'landmark0_max',
+    'landmark0_mean',
+    'landmark0_median',
+    'landmark0_std'
+    
+    'landmark11_min',
+    'landmark11_max',
+    'landmark11_mean',
+    'landmark11_median',
+    'landmark11_std',
+
+    'landmark12_min',
+    'landmark12_max',
+    'landmark12_mean',
+    'landmark12_median',
+    'landmark12_std',
+
+    'landmark23_min',
+    'landmark23_max',
+    'landmark23_mean',
+    'landmark23_median',
+    'landmark23_std',
+
+    'landmark24_min',
+    'landmark24_max',
+    'landmark24_mean',
+    'landmark24_median',
+    'landmark24_std',
+
+    'landmark25_min',
+    'landmark25_max',
+    'landmark25_mean',
+    'landmark25_median',
+    'landmark25_std',
+
+    'landmark26_min',
+    'landmark26_max',
+    'landmark26_mean',
+    'landmark26_median',
+    'landmark26_std',
+
+    'landmark27_min',
+    'landmark27_max',
+    'landmark27_mean',
+    'landmark27_median',
+    'landmark27_std',
+
+    'landmark28_min',
+    'landmark28_max',
+    'landmark28_mean',
+    'landmark28_median',
+    'landmark28_std',
+
+    'landmark29_min',
+    'landmark29_max',
+    'landmark29_mean',
+    'landmark29_median',
+    'landmark29_std',
+
+    'landmark30_min',
+    'landmark30_max',
+    'landmark30_mean',
+    'landmark30_median',
+    'landmark30_std',
+
+    'landmark31_min',
+    'landmark31_max',
+    'landmark31_mean',
+    'landmark31_median',
+    'landmark31_std',
+
+    'landmark32_min',
+    'landmark32_max',
+    'landmark32_mean',
+    'landmark32_median',
+    'landmark32_std',
 ]
 
 # 시트별 데이터 결합
