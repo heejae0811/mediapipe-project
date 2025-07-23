@@ -1,73 +1,81 @@
-import glob
+import glob, os
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve
-from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay, balanced_accuracy_score
+from sklearn.metrics import (
+    confusion_matrix, classification_report, roc_curve, auc, roc_auc_score,
+    balanced_accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
+)
 from sklearn.inspection import permutation_importance
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 
-# 1. 데이터 전처리 함수
+os.makedirs('./result', exist_ok=True)
+
+# 데이터 전처리
 def data_processing():
     csv_files = glob.glob('./features_xlsx/*.xlsx')
     df = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
-    # 원하는 변수 지정
     selected_features = [
-        'landmark0_max',
-        'landmark23_std',
-        'landmark24_std',
-        'landmark27_max',
-        'landmark25_min',
-        'landmark25_median',
-        'landmark30_min',
-        'landmark12_min',
-        'landmark30_max',
+        'landmark4_max',
+        'landmark8_max',
+        'landmark9_max',
+        'landmark7_max',
+        'landmark6_max',
+        'landmark5_max',
         'landmark28_min',
-        'landmark24_mean'
+        'landmark3_max',
+        'landmark8_std',
+        'landmark27_median',
+        'landmark13_max',
+        'landmark2_max',
+        'landmark24_std'
     ]
 
-    X_raw = df[selected_features]  # 여기서 선택한 변수만 사용
+    X_raw = df[selected_features]
     X = StandardScaler().fit_transform(X_raw)
     y = LabelEncoder().fit_transform(df['label'])
 
     return df, X_raw, X, y
 
 
-# 2. 머신러닝 모델 정의 함수
+# 모델 정의
 def get_models():
     return {
         'Decision Tree': {
             'estimator': DecisionTreeClassifier(random_state=42),
             'param_grid': {
-                'criterion': ['gini', 'entropy'],
-                'max_depth': [3, 5, 10, 15],
+                'max_depth': [None, 3, 5, 7],
                 'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 5],
-                'class_weight': [None, 'balanced']
+                'min_samples_leaf': [1, 2, 4],
+                'criterion': ['gini', 'entropy']
             }
         },
         'Random Forest': {
             'estimator': RandomForestClassifier(random_state=42),
             'param_grid': {
-                'n_estimators': [100, 200, 300],
-                'criterion': ['gini', 'entropy'],
-                'max_depth': [None, 5, 10, 20],
+                'n_estimators': [50, 100, 200],
+                'max_depth': [None, 3, 5],
                 'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2, 5],
-                'class_weight': [None, 'balanced']
+                'min_samples_leaf': [1, 2],
+                'criterion': ['gini', 'entropy']
             }
         },
         'KNN': {
             'estimator': KNeighborsClassifier(),
             'param_grid': {
-                'n_neighbors': [3, 5, 7, 9],
+                'n_neighbors': [1, 3, 5],
                 'weights': ['uniform', 'distance'],
                 'metric': ['euclidean', 'manhattan']
             }
@@ -75,34 +83,77 @@ def get_models():
         'SVM': {
             'estimator': SVC(probability=True, random_state=42),
             'param_grid': {
-                'C': [0.01, 0.1, 1, 10, 100],
+                'C': [0.1, 1, 10],
                 'kernel': ['linear', 'rbf'],
-                'gamma': ['scale', 'auto', 0.01, 0.001]
+                'gamma': ['scale', 0.01, 0.001]
             }
         },
         'Logistic Regression': {
             'estimator': LogisticRegression(max_iter=1000, random_state=42),
             'param_grid': {
-                'C': [0.01, 0.1, 1, 10, 100],
-                'penalty': ['l2'],
-                'solver': ['liblinear', 'lbfgs']
+                'C': [0.1, 1, 10],
+                'penalty': ['l1', 'l2'],
+                'solver': ['liblinear', 'saga']
+            }
+        },
+        'Naive Bayes': {
+            'estimator': GaussianNB(),
+            'param_grid': {}
+        },
+        'XGBoost': {
+            'estimator': XGBClassifier(random_state=42, eval_metric='logloss'),
+            'param_grid': {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [3, 5, 7],
+                'learning_rate': [0.01, 0.1, 0.2],
+                'subsample': [0.8, 1.0]
+            }
+        },
+        'CatBoost': {
+            'estimator': CatBoostClassifier(random_state=42, verbose=0),
+            'param_grid': {
+                'depth': [3, 5, 7],
+                'learning_rate': [0.01, 0.1],
+                'iterations': [50, 100, 200]
             }
         }
     }
 
 
-# 3. 시각화 함수들
-def plot_confusion_matrix(model_name, model_estimator, X_test, y_test):
-    ConfusionMatrixDisplay.from_estimator(
-        estimator=model_estimator,
-        X=X_test,
-        y=y_test,
-        display_labels=['Beginner', 'Advanced'],
-        cmap='Blues',
-        values_format='d'
-    )
+# 지표 계산
+def compute_metrics(y_true, y_pred, y_proba):
+    cm = confusion_matrix(y_true, y_pred)
+    tn, fp, fn, tp = cm.ravel()
 
+    return {
+        'Accuracy': (tn+tp)/(tn+fp+fn+tp),
+        'Precision': precision_score(y_true, y_pred),
+        'Recall': recall_score(y_true, y_pred),
+        'F1': f1_score(y_true, y_pred),
+        'Balanced_Accuracy': balanced_accuracy_score(y_true, y_pred),
+        'Specificity': tn/(tn+fp),
+        'Sensitivity': tp/(tp+fn),
+        'MCC': matthews_corrcoef(y_true, y_pred),
+        'AUC': roc_auc_score(y_true, y_proba) if y_proba is not None else None
+    }
+
+
+# 시각화
+def plot_confusion_matrix(model_name, y_test, y_pred):
+    cm = confusion_matrix(y_test, y_pred)
+
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt='d',
+        cmap='Blues',
+        xticklabels=['Beginner', 'Advanced'],
+        yticklabels=['Beginner', 'Advanced']
+    )
     plt.title(f'Confusion Matrix - {model_name}')
+    plt.ylabel('Actual')
+    plt.xlabel('Predicted')
     plt.tight_layout()
     plt.show()
 
@@ -123,6 +174,27 @@ def plot_roc_curve(model_name, y_test, y_proba):
     plt.show()
 
 
+def plot_learning_curve(model_name, estimator, X_train, y_train):
+    train_sizes, train_scores, val_scores = learning_curve(
+        estimator,
+        X_train,
+        y_train,
+        train_sizes=np.linspace(0.1,1.0,5),
+        cv=3
+    )
+
+    plt.figure()
+    plt.plot(train_sizes, train_scores.mean(axis=1), 'o-', label='Train')
+    plt.plot(train_sizes, val_scores.mean(axis=1), 'o-', label='Validation')
+    plt.title(f'Learning Curve - {model_name}')
+    plt.xlabel('Training Size')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(axis='y', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_accuracy_bar(model_name, train_score, test_score):
     plt.figure()
     plt.bar(['Train Accuracy', 'Test Accuracy'], [train_score, test_score], color=['#1f77b4', '#ff7f0e'])
@@ -136,64 +208,40 @@ def plot_accuracy_bar(model_name, train_score, test_score):
     plt.show()
 
 
-def plot_learning_curve(model_name, model_estimator, X_train, y_train):
-    train_sizes, train_scores, val_scores = learning_curve(
-        estimator=model_estimator,
-        X=X_train,
-        y=y_train,
-        train_sizes=np.linspace(0.1, 1.0, 5),
-        cv=5,
-        scoring='accuracy',
-        shuffle=True,
-        random_state=42
-    )
-    train_mean = np.mean(train_scores, axis=1)
-    val_mean = np.mean(val_scores, axis=1)
-
-    plt.figure()
-    plt.plot(train_sizes, train_mean, 'o--', label='Training Accuracy')
-    plt.plot(train_sizes, val_mean, 'o-', label='Validation Accuracy')
-    plt.title(f'Learning Curve - {model_name}')
-    plt.xlabel('Training Set Size')
-    plt.ylabel('Accuracy')
-    plt.ylim(0, 1.1)
-    plt.grid(True, alpha=0.5)
-    plt.legend(loc='lower right')
-    plt.tight_layout()
-    plt.show()
-
-
-# 4. 모델 실행 함수
+# 모델 실행
 def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
-    grid_search = GridSearchCV(
-        estimator=model_info['estimator'],
-        param_grid=model_info['param_grid'],
-        cv=5,
-        scoring='f1',
-        n_jobs=-1,
-        verbose=1,
-        return_train_score=True
-    )
-    grid_search.fit(X_train, y_train)
-    best_model = grid_search.best_estimator_
+    estimator = model_info['estimator']
+    param_grid = model_info['param_grid']
+
+    if param_grid:
+        grid = GridSearchCV(estimator, param_grid, cv=3, scoring='f1', n_jobs=-1)
+        grid.fit(X_train, y_train)
+        best_model = grid.best_estimator_
+    else:
+        best_model = estimator.fit(X_train, y_train)
 
     y_pred = best_model.predict(X_test)
-    y_proba = best_model.predict_proba(X_test)[:, 1]
+    y_proba = best_model.predict_proba(X_test)[:,1] if hasattr(best_model, 'predict_proba') else None
 
-    print(f'\n========== {model_name} 결과 ==========')
-    print('Best Parameters:', grid_search.best_params_)
-    print('Best f1-score (CV mean):', f'{grid_search.best_score_:.5f}')
-    print('Confusion Matrix:\n', confusion_matrix(y_test, y_pred))
-    print('Classification Report:\n', classification_report(y_test, y_pred, digits=5, zero_division=0))
-    print(f'Balanced Accuracy: {balanced_accuracy_score(y_test, y_pred):.5f}')
+    metrics = compute_metrics(y_test, y_pred, y_proba)
+    metrics['Model'] = model_name
+    metrics['Best Params'] = str(best_model.get_params())
 
-    # 함수 호출
-    plot_confusion_matrix(model_name, best_model, X_test, y_test)
-    plot_roc_curve(model_name, y_test, y_proba)
+    print(f'\n========== {model_name} ==========')
+    print(classification_report(y_test, y_pred))
 
-    # 중요도 시각화
+    # 시각화
+    plot_confusion_matrix(model_name, y_test, y_pred)
+    if y_proba is not None:
+        plot_roc_curve(model_name, y_test, y_proba)
+    plot_learning_curve(model_name, best_model, X_train, y_train)
+
+    train_score = best_model.score(X_train, y_train)
+    test_score = best_model.score(X_test, y_test)
+    plot_accuracy_bar(model_name, train_score, test_score)
+
+    # Feature Importance
     if hasattr(best_model, 'feature_importances_'):
-        # Tree 기반 모델
         importances = best_model.feature_importances_
         indices = np.argsort(importances)[::-1]
         features = X_raw.columns[indices]
@@ -203,21 +251,19 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
         plt.xticks(range(len(features)), features, rotation=45, ha='right', fontsize=10)
         plt.ylabel('Importance Score')
         plt.title(f'Feature Importance - {model_name}')
-        plt.grid(True, alpha=0.5)
+        plt.grid(axis='y', alpha=0.5)
         plt.tight_layout()
         plt.show()
     else:
-        # Tree 기반이 아닌 모델
         result = permutation_importance(
             estimator=best_model,
             X=X_test,
             y=y_test,
-            scoring='roc_auc',  # 또는 'accuracy', 'f1' 등으로 변경 가능
+            scoring='roc_auc',
             n_repeats=30,
             random_state=42,
             n_jobs=-1
         )
-
         importances = result.importances_mean
         stds = result.importances_std
         indices = np.argsort(importances)[::-1]
@@ -232,19 +278,30 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
         plt.tight_layout()
         plt.show()
 
-    # 함수 호출
-    train_score = best_model.score(X_train, y_train)
-    test_score = best_model.score(X_test, y_test)
-    plot_accuracy_bar(model_name, train_score, test_score)
-    plot_learning_curve(model_name, best_model, X_train, y_train)
+    return metrics
 
 
-# 5. 실행
+# 실행
 if __name__ == '__main__':
     df, X_raw, X, y = data_processing()
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
     models = get_models()
+    results = []
 
     for model_name, model_info in models.items():
-        run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw)
+        metrics = run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw)
+        results.append(metrics)
+
+    results_df = pd.DataFrame(results)
+    results_df.sort_values(by='F1', ascending=False, inplace=True)
+
+    # 📋 터미널에 예쁘게 출력
+    print("\n📊 전체 모델 성능 요약:")
+    print(
+        results_df[['Model', 'Accuracy', 'Precision', 'Recall', 'F1', 'Balanced_Accuracy', 'MCC', 'AUC']]
+        .to_string(index=False, float_format='{:0.4f}'.format)
+    )
+
+    results_df.to_excel('./result/model_comparison.xlsx', index=False)
+    print("\n✅ 결과가 './result/model_comparison.xlsx' 에 저장되었습니다.")

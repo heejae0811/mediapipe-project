@@ -5,8 +5,8 @@ import cv2
 import os
 
 # 설정
-LABEL = 1
-VIDEO_PATH = './videos/_1_250705.mov'
+LABEL = 0
+VIDEO_PATH = './videos/30__0_2502277.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1

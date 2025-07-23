@@ -1,95 +1,17 @@
 import glob, os
-import pandas as pd
 import numpy as np
+import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import StratifiedKFold
 
-# 설정
+
+# 파일 설정
 excel_files = [f for f in glob.glob('./features_xlsx/*.xlsx') if '~$' not in f]
 output_dir = './result'
 os.makedirs(output_dir, exist_ok=True)
-
-# 관절 인슉률이 좋은 feature들
-selected_features = [
-    'landmark0_min',
-    'landmark0_max',
-    'landmark0_mean',
-    'landmark0_median',
-    'landmark0_std'
-    
-    'landmark11_min',
-    'landmark11_max',
-    'landmark11_mean',
-    'landmark11_median',
-    'landmark11_std',
-
-    'landmark12_min',
-    'landmark12_max',
-    'landmark12_mean',
-    'landmark12_median',
-    'landmark12_std',
-
-    'landmark23_min',
-    'landmark23_max',
-    'landmark23_mean',
-    'landmark23_median',
-    'landmark23_std',
-
-    'landmark24_min',
-    'landmark24_max',
-    'landmark24_mean',
-    'landmark24_median',
-    'landmark24_std',
-
-    'landmark25_min',
-    'landmark25_max',
-    'landmark25_mean',
-    'landmark25_median',
-    'landmark25_std',
-
-    'landmark26_min',
-    'landmark26_max',
-    'landmark26_mean',
-    'landmark26_median',
-    'landmark26_std',
-
-    'landmark27_min',
-    'landmark27_max',
-    'landmark27_mean',
-    'landmark27_median',
-    'landmark27_std',
-
-    'landmark28_min',
-    'landmark28_max',
-    'landmark28_mean',
-    'landmark28_median',
-    'landmark28_std',
-
-    'landmark29_min',
-    'landmark29_max',
-    'landmark29_mean',
-    'landmark29_median',
-    'landmark29_std',
-
-    'landmark30_min',
-    'landmark30_max',
-    'landmark30_mean',
-    'landmark30_median',
-    'landmark30_std',
-
-    'landmark31_min',
-    'landmark31_max',
-    'landmark31_mean',
-    'landmark31_median',
-    'landmark31_std',
-
-    'landmark32_min',
-    'landmark32_max',
-    'landmark32_mean',
-    'landmark32_median',
-    'landmark32_std',
-]
 
 # 시트별 데이터 결합
 sheet1_dfs, sheet2_dfs = [], []
@@ -104,48 +26,51 @@ for file_path in excel_files:
 df_sheet1 = pd.concat(sheet1_dfs, ignore_index=True)
 df_sheet2 = pd.concat(sheet2_dfs, ignore_index=True)
 
-# Feature Importance 함수
-def compute_feature_importance(df, sheet_name, selected_features=None):
-    print(f"\n📋 {sheet_name}")
+# Feature Selection 함수 (CV 기반)
+def feature_selection_cv(df, sheet_name, top_n=10, n_splits=5):
+    print(f"\n{sheet_name} - Cross-Validation 기반 Feature Selection")
 
-    if selected_features:
-        # 선택한 feature가 실제 데이터프레임에 있는지 확인
-        valid_features = [f for f in selected_features if f in df.columns]
-        if not valid_features:
-            raise ValueError("❌ 선택한 feature가 데이터에 없습니다.")
-        X_raw = df[valid_features]
-    else:
-        X_raw = df.drop(['id', 'label'], axis=1)
-
+    X_raw = df.drop(columns=['id', 'label'])
     y = LabelEncoder().fit_transform(df['label'])
-    X = StandardScaler().fit_transform(X_raw)
+    feature_names = X_raw.columns.tolist()
 
-    clf = RandomForestClassifier(random_state=42).fit(X, y)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_raw)
 
-    importances = clf.feature_importances_
-    indices = np.argsort(importances)[::-1]
-    features = X_raw.columns[indices]
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    importances_accum = np.zeros(len(feature_names))
 
-    df_out = pd.DataFrame({
-        'Feature': features,
-        'Importance': importances[indices]
-    })
-    top10_df = df_out.head(10)
-    df_out.to_csv(f"{output_dir}/{sheet_name}.csv", index=False)
+    for fold, (train_idx, val_idx) in enumerate(skf.split(X_scaled, y), 1):
+        X_train, y_train = X_scaled[train_idx], y[train_idx]
+        clf = RandomForestClassifier(random_state=42)
+        clf.fit(X_train, y_train)
+        importances_accum += clf.feature_importances_
+        print(f"Fold {fold} 완료")
 
-    plt.figure(figsize=(12, 6))
-    plt.bar(range(len(top10_df)), top10_df['Importance'], align='center')
-    plt.xticks(range(len(top10_df)), top10_df['Feature'], rotation=45, ha='right', fontsize=8)
-    plt.ylabel('Importance')
-    plt.title(f'{sheet_name} (Top 10)')
-    plt.grid(True, alpha=0.5)
+    importances_mean = importances_accum / n_splits
+
+    df_importance = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importances_mean
+    }).sort_values(by='Importance', ascending=False)
+
+    top_features = df_importance.head(top_n)['Feature'].tolist()
+    print(f"\n✅ 선택된 상위 {top_n} feature:\n", top_features)
+
+    # 저장
+    df_importance.to_csv(f"{output_dir}/{sheet_name}_importance.csv", index=False)
+
+    plt.figure(figsize=(8, 5))
+    sns.barplot(x='Importance', y='Feature', data=df_importance.head(top_n))
+    plt.title(f'{sheet_name} - Top {top_n} Features (CV 기반)')
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/{sheet_name}.png")
+    plt.savefig(f"{output_dir}/{sheet_name}_top{top_n}.png")
     plt.close()
-    print(f"✅ 저장 완료: {sheet_name}")
+
+    print(f"{sheet_name} 결과 저장 완료")
 
 # 실행
-compute_feature_importance(df_sheet1, 'Position Feature Importance', selected_features)
-compute_feature_importance(df_sheet2, 'Normalized Position Feature Importance', selected_features)
+feature_selection_cv(df_sheet1, 'Position Feature Importance')
+feature_selection_cv(df_sheet2, 'Normalized Position Feature Importance')
 
-print("\n🎯 모든 작업 완료!")
+print("\n✅ 모든 작업 완료!")

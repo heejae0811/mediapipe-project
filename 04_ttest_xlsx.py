@@ -1,5 +1,4 @@
-import os
-import glob
+import os, glob
 import numpy as np
 import pandas as pd
 from scipy.stats import ttest_ind, mannwhitneyu, shapiro, levene
@@ -121,13 +120,29 @@ save_path = './result/features_ttest.xlsx'
 
 with pd.ExcelWriter(save_path) as writer:
     if not res1.empty:
+        # 전체
         res1.to_excel(writer, sheet_name='position_ttest', index=False)
+        # p-value < 0.05
+        res1_sig = res1[res1['p_value'] < 0.05]
+        if not res1_sig.empty:
+            res1_sig.to_excel(writer, sheet_name='position_ttest_sig', index=False)
+        else:
+            pd.DataFrame({'message': ['No significant results (p<0.05)']}).to_excel(writer, sheet_name='position_ttest_sig', index=False)
     else:
         pd.DataFrame({'message': ['No valid results']}).to_excel(writer, sheet_name='position_ttest', index=False)
+        pd.DataFrame({'message': ['No significant results (p<0.05)']}).to_excel(writer, sheet_name='position_ttest_sig', index=False)
 
     if not res2.empty:
+        # 전체
         res2.to_excel(writer, sheet_name='normalized_position_ttest', index=False)
+        # p-value < 0.05
+        res2_sig = res2[res2['p_value'] < 0.05]
+        if not res2_sig.empty:
+            res2_sig.to_excel(writer, sheet_name='normalized_position_ttest_sig', index=False)
+        else:
+            pd.DataFrame({'message': ['No significant results (p<0.05)']}).to_excel(writer, sheet_name='normalized_position_ttest_sig', index=False)
     else:
         pd.DataFrame({'message': ['No valid results']}).to_excel(writer, sheet_name='normalized_position_ttest', index=False)
+        pd.DataFrame({'message': ['No significant results (p<0.05)']}).to_excel(writer, sheet_name='normalized_position_ttest_sig', index=False)
 
 print(f'✅ 분석 완료: {save_path}')

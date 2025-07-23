@@ -1,16 +1,15 @@
+import os, glob
 import pandas as pd
-import glob
-from scipy.stats import shapiro, pearsonr, spearmanr
 import networkx as nx
-import os
+from scipy.stats import shapiro, pearsonr, spearmanr
 
 os.makedirs('./result', exist_ok=True)
 
-def analyze_and_filter_with_grouping(df):
+def correlation_analyze(df):
     metrics = [col for col in df.columns if col not in ['id', 'label']]
     results = []
 
-    # 정규성에 따른 상관계수 계산
+    # 변수쌍별 상관계수 계산 (정규성 고려)
     for i in range(len(metrics)):
         for j in range(i+1, len(metrics)):
             var1, var2 = metrics[i], metrics[j]
@@ -23,10 +22,10 @@ def analyze_and_filter_with_grouping(df):
             p_norm_y = shapiro(y).pvalue
 
             if p_norm_x > 0.05 and p_norm_y > 0.05:
-                corr, pval = pearsonr(x, y)
+                corr, _ = pearsonr(x, y)
                 method = 'Pearson'
             else:
-                corr, pval = spearmanr(x, y)
+                corr, _ = spearmanr(x, y)
                 method = 'Spearman'
 
             results.append({
@@ -40,22 +39,45 @@ def analyze_and_filter_with_grouping(df):
 
     res_df = pd.DataFrame(results)
 
-    # 상관계수가 0.9 이상인 변수쌍 추출
+    # 상관계수 ≥ 0.9인 변수쌍 추출
     high_corr_df = res_df[res_df['상관계수'].abs() >= 0.9].copy()
 
-    # 네트워크로 그룹화 후 제거 변수 결정
+    # 네트워크 생성
     G = nx.Graph()
     G.add_edges_from(zip(high_corr_df['변수1'], high_corr_df['변수2']))
 
     to_keep = []
     to_drop = []
 
+    # 각 그룹에서 label과의 상관이 가장 높은 변수 남기기
     for group in nx.connected_components(G):
         group = list(group)
-        to_keep.append(group[0])    # 그룹에서 하나만 남기고
-        to_drop.extend(group[1:])   # 나머지는 제거
 
-    # 그룹에 속하지 않는 변수 + 그룹에서 남긴 변수
+        best_var = None
+        best_corr = -float('inf')
+
+        for var in group:
+            data = df[[var, 'label']].dropna()
+            if len(data) < 3:
+                continue
+
+            p_norm_x = shapiro(data[var]).pvalue
+            p_norm_y = shapiro(data['label']).pvalue
+
+            if p_norm_x > 0.05 and p_norm_y > 0.05:
+                corr, _ = pearsonr(data[var], data['label'])
+            else:
+                corr, _ = spearmanr(data[var], data['label'])
+
+            if abs(corr) > best_corr:
+                best_corr = abs(corr)
+                best_var = var
+
+        if best_var is not None:
+            to_keep.append(best_var)
+            to_drop.extend([v for v in group if v != best_var])
+
+    # 그룹에 속하지 않은 변수 + 그룹에서 남긴 변수
     all_grouped = set(high_corr_df['변수1']).union(high_corr_df['변수2'])
     remaining_vars = [v for v in metrics if (v in to_keep) or (v not in all_grouped)]
 
@@ -74,16 +96,16 @@ if not dfs:
 df = pd.concat(dfs, ignore_index=True)
 
 # 분석
-res_df, high_corr_df, to_keep, to_drop, remaining_vars = analyze_and_filter_with_grouping(df)
+res_df, high_corr_df, to_keep, to_drop, remaining_vars = correlation_analyze(df)
 
 # 결과 출력
 print("\n✅ 정규성에 따라 계산된 상관계수 결과 (앞부분):")
 print(res_df.head())
 
-print("\n✅ 상관계수 >= 0.9인 변수쌍:")
+print("\n✅ 상관계수 ≥ 0.9인 변수쌍:")
 print(high_corr_df)
 
-print("\n✅ 각 그룹에서 남긴 변수:")
+print("\n✅ 각 그룹에서 남긴 변수 (label과의 상관 최대):")
 print(to_keep)
 
 print("\n✅ 제거한 변수:")
@@ -92,7 +114,7 @@ print(to_drop)
 print("\n✅ 최종 남은 변수:")
 print(remaining_vars)
 
-# 결과 엑셀로 저장
+# 엑셀로 저장
 with pd.ExcelWriter('./result/features_correlation.xlsx') as writer:
     res_df.to_excel(writer, sheet_name='모든_쌍_결과', index=False)
     high_corr_df.to_excel(writer, sheet_name='0.9이상_쌍', index=False)
@@ -100,4 +122,4 @@ with pd.ExcelWriter('./result/features_correlation.xlsx') as writer:
     pd.DataFrame({'제거한변수': to_drop}).to_excel(writer, sheet_name='제거한변수', index=False)
     pd.DataFrame({'최종남은변수': remaining_vars}).to_excel(writer, sheet_name='최종남은변수', index=False)
 
-print("\n 결과가 './result/features_correlation.xlsx' 에 저장되었습니다.")
+print("\n결과가 './result/features_correlation.xlsx' 에 저장되었습니다.")
