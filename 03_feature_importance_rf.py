@@ -7,28 +7,31 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import StratifiedKFold
 
-
-# 파일 설정
+# 설정
 excel_files = [f for f in glob.glob('./features_xlsx/*.xlsx') if '~$' not in f]
 output_dir = './result'
 os.makedirs(output_dir, exist_ok=True)
 
-# 시트별 데이터 결합
-sheet1_dfs, sheet2_dfs = [], []
+# 시트 번호 선택
+sheet_index = 2
+sheet_name_map = {2: 'Jerk'}
+sheet_name = sheet_name_map.get(sheet_index, f'Sheet{sheet_index}')
 
+# 시트별 데이터 로딩
+dfs = []
 for file_path in excel_files:
     try:
-        sheet1_dfs.append(pd.read_excel(file_path, sheet_name=0, engine='openpyxl'))
-        sheet2_dfs.append(pd.read_excel(file_path, sheet_name=1, engine='openpyxl'))
+        df = pd.read_excel(file_path, sheet_name=sheet_index, engine='openpyxl')
+        dfs.append(df)
     except Exception as e:
-        print(f"⚠️ {file_path} → {e}")
+        print(f"⚠️ {file_path} (sheet {sheet_index}) → {e}")
 
-df_sheet1 = pd.concat(sheet1_dfs, ignore_index=True)
-df_sheet2 = pd.concat(sheet2_dfs, ignore_index=True)
+# 데이터 결합
+df_all = pd.concat(dfs, ignore_index=True)
 
-# Feature Selection 함수 (CV 기반)
+# Feature Selection 함수
 def feature_selection_cv(df, sheet_name, top_n=10, n_splits=5):
-    print(f"\n{sheet_name} - Cross-Validation 기반 Feature Selection")
+    print(f"\n📊 {sheet_name} - Feature Selection(CV)")
 
     X_raw = df.drop(columns=['id', 'label'])
     y = LabelEncoder().fit_transform(df['label'])
@@ -70,7 +73,6 @@ def feature_selection_cv(df, sheet_name, top_n=10, n_splits=5):
     print(f"{sheet_name} 결과 저장 완료")
 
 # 실행
-feature_selection_cv(df_sheet1, 'Position Feature Importance')
-feature_selection_cv(df_sheet2, 'Normalized Position Feature Importance')
+feature_selection_cv(df_all, f'{sheet_name} Feature Importance')
 
 print("\n✅ 모든 작업 완료!")

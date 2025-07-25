@@ -19,28 +19,26 @@ from sklearn.naive_bayes import GaussianNB
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
 
-os.makedirs('./result', exist_ok=True)
+os.makedirs('./result_ml', exist_ok=True)
 
 # 데이터 전처리
 def data_processing():
     csv_files = glob.glob('./features_xlsx/*.xlsx')
-    df = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
+    df = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
     selected_features = [
-        'landmark4_max',
-        'landmark8_max',
-        'landmark9_max',
-        'landmark7_max',
-        'landmark6_max',
-        'landmark5_max',
-        'landmark28_min',
-        'landmark3_max',
-        'landmark8_std',
-        'landmark27_median',
-        'landmark13_max',
-        'landmark2_max',
-        'landmark24_std'
+        'landmark23_jerk_min_distNorm',
+        'landmark11_jerk_max_distNorm',
+        'landmark31_jerk_max_raw',
+        'landmark24_jerk_std_distNorm',
+        'landmark25_jerk_max_raw',
+        'landmark31_jerk_min_raw',
+        'landmark31_jerk_max_timeNorm',
+        'landmark29_jerk_max_raw',
+        'landmark12_jerk_max_distNorm',
+        'landmark29_jerk_max_timeNorm',
+        'landmark16_jerk_mean_distNorm'
     ]
 
     X_raw = df[selected_features]
@@ -303,5 +301,5 @@ if __name__ == '__main__':
         .to_string(index=False, float_format='{:0.4f}'.format)
     )
 
-    results_df.to_excel('./result/model_comparison.xlsx', index=False)
-    print("\n✅ 결과가 './result/model_comparison.xlsx' 에 저장되었습니다.")
+    results_df.to_excel('./result_ml/model_comparison.xlsx', index=False)
+    print("\n✅ 결과가 './result_ml/model_comparison.xlsx' 에 저장되었습니다.")

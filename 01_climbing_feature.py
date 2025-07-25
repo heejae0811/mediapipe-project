@@ -1,116 +1,101 @@
+import os, cv2
 import numpy as np
 import pandas as pd
 import mediapipe as mp
-import cv2
-import os
 
 # 설정
-LABEL = 0
-VIDEO_PATH = './videos/30__0_2502277.mov'
+LABEL = 1
+VIDEO_PATH = './videos/홍규화_1_250710.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1
 
-# Mediapipe Pose 초기화
+# Mediapipe 초기화
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5)
 
 cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
-    raise IOError(f'Cannot open video: {VIDEO_PATH}')
+    raise IOError(f"Cannot open video: {VIDEO_PATH}")
 
-actual_fps = cap.get(cv2.CAP_PROP_FPS)
+fps = cap.get(cv2.CAP_PROP_FPS)
+trajectory = {i: {'x': [], 'y': [], 'z': [], 'visibility': []} for i in range(33)}
 frame_idx = 0
 
-# landmark 좌표 + visibility 저장
-trajectory = {i: {'x': [], 'y': [], 'visibility': []} for i in range(33)}
-
+# 프레임 반복
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
-
     if frame_idx % FRAME_INTERVAL == 0:
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = pose.process(image_rgb)
-
         if results.pose_landmarks:
             for i, lm in enumerate(results.pose_landmarks.landmark):
                 trajectory[i]['x'].append(lm.x)
                 trajectory[i]['y'].append(lm.y)
+                trajectory[i]['z'].append(lm.z)
                 trajectory[i]['visibility'].append(lm.visibility)
-
     frame_idx += 1
 
 cap.release()
 pose.close()
 
-# 정규화 (왼쪽어깨 – 왼쪽엉덩이) 계산
-shoulder_x = np.array(trajectory[11]['x'])  # left_shoulder
-shoulder_y = np.array(trajectory[11]['y'])
-hip_x = np.array(trajectory[23]['x'])       # left_hip
-hip_y = np.array(trajectory[23]['y'])
+# 기준값 계산
+total_time = frame_idx / fps
+body_size = np.mean(np.sqrt(
+    (np.array(trajectory[11]['x']) - np.array(trajectory[23]['x']))**2 + (np.array(trajectory[11]['y']) - np.array(trajectory[23]['y']))**2
+))
 
-body_sizes = np.sqrt((shoulder_x - hip_x)**2 + (shoulder_y - hip_y)**2)
-mean_body_size = np.mean(body_sizes)
-
-# 위치 변화량 + 정규화 계산 함수
-def compute_displacement_metrics(x_list, y_list, body_size):
-    x = np.array(x_list)
-    y = np.array(y_list)
-
-    if len(x) < 2 or body_size == 0:
-        return [np.nan] * 10
-
-    coords = np.stack([x, y], axis=1)
-    deltas = np.diff(coords, axis=0)
-    distances = np.linalg.norm(deltas, axis=1)
-    normalized = distances / body_size
-
-    return [
-        np.min(distances), np.max(distances), np.mean(distances), np.median(distances), np.std(distances),
-        np.min(normalized), np.max(normalized), np.mean(normalized), np.median(normalized), np.std(normalized)
-    ]
-
-pos_data = {'id': FILE_ID, 'label': LABEL}
-norm_data = {'id': FILE_ID, 'label': LABEL}
+# 결과 저장용 딕셔너리
+velocity_data = {'id': FILE_ID, 'label': LABEL}
+accel_data = {'id': FILE_ID, 'label': LABEL}
+jerk_data = {'id': FILE_ID, 'label': LABEL}
 vis_data = {'id': FILE_ID, 'label': LABEL}
 
-# 관절별 함수 실행
-for idx in range(33):
-    metrics = compute_displacement_metrics(
-        trajectory[idx]['x'], trajectory[idx]['y'], mean_body_size
-    )
+data_map = {
+    'velocity': velocity_data,
+    'accel': accel_data,
+    'jerk': jerk_data
+}
 
-    # 위치 변화량
-    pos_data[f'landmark{idx}_min'] = metrics[0]
-    pos_data[f'landmark{idx}_max'] = metrics[1]
-    pos_data[f'landmark{idx}_mean'] = metrics[2]
-    pos_data[f'landmark{idx}_median'] = metrics[3]
-    pos_data[f'landmark{idx}_std'] = metrics[4]
+# 관절별 분석
+for i in range(33):
+    x, y, z = np.array(trajectory[i]['x']), np.array(trajectory[i]['y']), np.array(trajectory[i]['z'])
+    vis_array = np.array(trajectory[i]['visibility'])
 
-    # 정규화된 위치 변화량
-    norm_data[f'landmark{idx}_norm_min'] = metrics[5]
-    norm_data[f'landmark{idx}_norm_max'] = metrics[6]
-    norm_data[f'landmark{idx}_norm_mean'] = metrics[7]
-    norm_data[f'landmark{idx}_norm_median'] = metrics[8]
-    norm_data[f'landmark{idx}_norm_std'] = metrics[9]
+    # 속도, 가속도, 저크 계산
+    v = np.linalg.norm(np.diff(np.stack([x, y, z], axis=1), axis=0), axis=1) * fps
+    a = np.diff(v) * fps
+    j = np.diff(a) * fps
 
-    # 인식률
-    vis_array = np.array(trajectory[idx]['visibility'])
-    vis_mean = np.mean(vis_array) if len(vis_array) > 0 else np.nan
-    vis_data[f'landmark{idx}_visibility_mean'] = vis_mean
+    def compute_stats(arr):
+        return [np.min(arr), np.max(arr), np.mean(arr), np.std(arr)] if len(arr) > 3 else [np.nan]*4
 
-# DataFrame 생성
-pos_df = pd.DataFrame([pos_data])
-norm_df = pd.DataFrame([norm_data])
-vis_df = pd.DataFrame([vis_data])
+    stats = {
+        'velocity': compute_stats(v),
+        'accel': compute_stats(a),
+        'jerk': compute_stats(j)
+    }
 
-# 엑셀 저장 (Sheet1: 위치 변화량, Sheet2: 정규화된 위치 변화량, Sheet3: 인식률)
+    for name in ['velocity', 'accel', 'jerk']:
+        raw = stats[name]
+        time_norm = [val / total_time for val in raw]
+        dist_norm = [val / body_size for val in raw]
+
+        for k, stat_name in zip(['min', 'max', 'mean', 'std'], range(4)):
+            data_map[name][f'landmark{i}_{name}_{k}_raw'] = raw[stat_name]
+            data_map[name][f'landmark{i}_{name}_{k}_timeNorm'] = time_norm[stat_name]
+            data_map[name][f'landmark{i}_{name}_{k}_distNorm'] = dist_norm[stat_name]
+
+    vis_data[f'landmark{i}_visibility_mean'] = np.mean(vis_array) if len(vis_array) > 0 else np.nan
+
+# 엑셀 저장
 os.makedirs(os.path.dirname(OUTPUT_XLSX), exist_ok=True)
 with pd.ExcelWriter(OUTPUT_XLSX, engine='openpyxl') as writer:
-    pos_df.to_excel(writer, index=False, sheet_name='Position Metrics')
-    norm_df.to_excel(writer, index=False, sheet_name='Normalized Position Metrics')
-    vis_df.to_excel(writer, index=False, sheet_name='Visibility Metrics')
+    pd.DataFrame([velocity_data]).to_excel(writer, index=False, sheet_name='Velocity')
+    pd.DataFrame([accel_data]).to_excel(writer, index=False, sheet_name='Acceleration')
+    pd.DataFrame([jerk_data]).to_excel(writer, index=False, sheet_name='Jerk')
+    pd.DataFrame([vis_data]).to_excel(writer, index=False, sheet_name='Visibility')
 
-print(f"✅ 위치 변화량 + 정규화 + 관절 인식률 저장 완료: '{OUTPUT_XLSX}'")
+print(f"✅ 저장 완료: {OUTPUT_XLSX}")
