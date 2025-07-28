@@ -5,7 +5,7 @@ import mediapipe as mp
 
 # 설정
 LABEL = 1
-VIDEO_PATH = './videos/홍규화_1_250710.mov'
+VIDEO_PATH = './videos/59_정예라_1_2507277.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1
@@ -18,11 +18,11 @@ cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
     raise IOError(f"Cannot open video: {VIDEO_PATH}")
 
+# 관절 인식률
 fps = cap.get(cv2.CAP_PROP_FPS)
 trajectory = {i: {'x': [], 'y': [], 'z': [], 'visibility': []} for i in range(33)}
 frame_idx = 0
 
-# 프레임 반복
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -41,11 +41,33 @@ while cap.isOpened():
 cap.release()
 pose.close()
 
-# 기준값 계산
-total_time = frame_idx / fps
-body_size = np.mean(np.sqrt(
-    (np.array(trajectory[11]['x']) - np.array(trajectory[23]['x']))**2 + (np.array(trajectory[11]['y']) - np.array(trajectory[23]['y']))**2
-))
+# 신체 사이즈별 정규화
+def compute_body_size(trajectory, threshold=0.5):
+    def get_valid_distance(idx1, idx2):
+        x1 = np.array(trajectory[idx1]['x'])
+        y1 = np.array(trajectory[idx1]['y'])
+        v1 = np.array(trajectory[idx1]['visibility'])
+
+        x2 = np.array(trajectory[idx2]['x'])
+        y2 = np.array(trajectory[idx2]['y'])
+        v2 = np.array(trajectory[idx2]['visibility'])
+
+        valid_mask = (v1 > threshold) & (v2 > threshold)
+        if np.sum(valid_mask) > 0:
+            dist = np.sqrt((x1[valid_mask] - x2[valid_mask])**2 + (y1[valid_mask] - y2[valid_mask])**2)
+            return np.mean(dist)
+        else:
+            return None
+
+    left = get_valid_distance(11, 23)
+    if left is not None:
+        return left
+
+    right = get_valid_distance(12, 24)
+    if right is not None:
+        return right
+
+    return 1.0  # 기본값
 
 # 결과 저장용 딕셔너리
 velocity_data = {'id': FILE_ID, 'label': LABEL}
@@ -59,15 +81,18 @@ data_map = {
     'jerk': jerk_data
 }
 
+total_time = frame_idx / fps
+body_size = compute_body_size(trajectory)
+
 # 관절별 분석
 for i in range(33):
     x, y, z = np.array(trajectory[i]['x']), np.array(trajectory[i]['y']), np.array(trajectory[i]['z'])
     vis_array = np.array(trajectory[i]['visibility'])
 
     # 속도, 가속도, 저크 계산
-    v = np.linalg.norm(np.diff(np.stack([x, y, z], axis=1), axis=0), axis=1) * fps
-    a = np.diff(v) * fps
-    j = np.diff(a) * fps
+    v = np.linalg.norm(np.diff(np.stack([x, y, z], axis=1), axis=0), axis=1) * fps # 위치가 얼마나 많이 바뀌었는지, 두 위치 사이의 거리를 시간으로 나눈 것
+    a = np.diff(v) * fps # 속도가 얼마나 바뀌었는지, 속도의 변화량 /  시간
+    j = np.diff(a) * fps # 가속도가 얼마나 바뀌었는지, 가속도 변화량 / 시간
 
     def compute_stats(arr):
         return [np.min(arr), np.max(arr), np.mean(arr), np.std(arr)] if len(arr) > 3 else [np.nan]*4
@@ -98,4 +123,4 @@ with pd.ExcelWriter(OUTPUT_XLSX, engine='openpyxl') as writer:
     pd.DataFrame([jerk_data]).to_excel(writer, index=False, sheet_name='Jerk')
     pd.DataFrame([vis_data]).to_excel(writer, index=False, sheet_name='Visibility')
 
-print(f"✅ 저장 완료: {OUTPUT_XLSX}")
+print(f"✅ 엑셀 저장 완료: {OUTPUT_XLSX}")

@@ -1,18 +1,20 @@
-import glob, os
+import os, glob
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 # 설정
 excel_files = [f for f in glob.glob('./features_xlsx/*.xlsx') if '~$' not in f]
 output_dir = './result'
 os.makedirs(output_dir, exist_ok=True)
 
-# 시트 번호 선택
+print(f"{len(excel_files)}개의 파일을 분석합니다.")
+
+# 엑셀 시트 번호 선택
 sheet_index = 2
 sheet_name_map = {2: 'Jerk'}
 sheet_name = sheet_name_map.get(sheet_index, f'Sheet{sheet_index}')
@@ -26,12 +28,9 @@ for file_path in excel_files:
     except Exception as e:
         print(f"⚠️ {file_path} (sheet {sheet_index}) → {e}")
 
-# 데이터 결합
-df_all = pd.concat(dfs, ignore_index=True)
-
 # Feature Selection 함수
 def feature_selection_cv(df, sheet_name, top_n=10, n_splits=5):
-    print(f"\n📊 {sheet_name} - Feature Selection(CV)")
+    print(f"\n{sheet_name} - Feature Selection(CV)")
 
     X_raw = df.drop(columns=['id', 'label'])
     y = LabelEncoder().fit_transform(df['label'])
@@ -58,21 +57,20 @@ def feature_selection_cv(df, sheet_name, top_n=10, n_splits=5):
     }).sort_values(by='Importance', ascending=False)
 
     top_features = df_importance.head(top_n)['Feature'].tolist()
-    print(f"\n✅ 선택된 상위 {top_n} feature:\n", top_features)
+    print(f"\n선택된 상위 {top_n} feature:\n", top_features)
 
     # 저장
-    df_importance.to_csv(f"{output_dir}/{sheet_name}_importance.csv", index=False)
+    df_importance.to_csv(f"{output_dir}/{sheet_name}.csv", index=False)
 
     plt.figure(figsize=(8, 5))
     sns.barplot(x='Importance', y='Feature', data=df_importance.head(top_n))
-    plt.title(f'{sheet_name} - Top {top_n} Features (CV 기반)')
+    plt.title(f'{sheet_name} - Top {top_n} Features (CV)')
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/{sheet_name}_top{top_n}.png")
+    plt.savefig(f"{output_dir}/{sheet_name}.png")
     plt.close()
 
-    print(f"{sheet_name} 결과 저장 완료")
+    print(f"✅ 엑셀 저장 완료: {sheet_name}")
 
 # 실행
+df_all = pd.concat(dfs, ignore_index=True)
 feature_selection_cv(df_all, f'{sheet_name} Feature Importance')
-
-print("\n✅ 모든 작업 완료!")

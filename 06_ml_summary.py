@@ -1,4 +1,4 @@
-import glob, os
+import os, glob
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -10,7 +10,7 @@ from sklearn.metrics import (
     balanced_accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
 )
 from sklearn.inspection import permutation_importance
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, plot_tree
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -19,12 +19,13 @@ from sklearn.naive_bayes import GaussianNB
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
 
+# 설정
 os.makedirs('./result_ml', exist_ok=True)
 
 # 데이터 전처리
 def data_processing():
     csv_files = glob.glob('./features_xlsx/*.xlsx')
-    df = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
+    df = pd.concat([pd.read_excel(file, sheet_name=1) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
 
     selected_features = [
@@ -188,7 +189,7 @@ def plot_learning_curve(model_name, estimator, X_train, y_train):
     plt.xlabel('Training Size')
     plt.ylabel('Accuracy')
     plt.legend()
-    plt.grid(axis='y', alpha=0.5)
+    plt.grid(axis='both', alpha=0.5)
     plt.tight_layout()
     plt.show()
 
@@ -276,6 +277,24 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
         plt.tight_layout()
         plt.show()
 
+    if model_name == 'Decision Tree':
+        from sklearn.tree import plot_tree
+
+        plt.figure(figsize=(30, 10))
+        plot_tree(
+            best_model,
+            feature_names=X_raw.columns,
+            class_names=['Beginner', 'Advanced'],  # 또는 ['None', 'Injury']처럼 클래스 라벨에 맞게
+            filled=True,
+            rounded=True,
+            fontsize=10
+        )
+        plt.title(f"Decision Tree Structure")
+        plt.tight_layout()
+        plt.show()
+
+        print("Max Depth of the best tree:", best_model.get_depth())
+
     return metrics
 
 
@@ -294,8 +313,7 @@ if __name__ == '__main__':
     results_df = pd.DataFrame(results)
     results_df.sort_values(by='F1', ascending=False, inplace=True)
 
-    # 📋 터미널에 예쁘게 출력
-    print("\n📊 전체 모델 성능 요약:")
+    print("\n전체 모델 성능 요약:")
     print(
         results_df[['Model', 'Accuracy', 'Precision', 'Recall', 'F1', 'Balanced_Accuracy', 'MCC', 'AUC']]
         .to_string(index=False, float_format='{:0.4f}'.format)
