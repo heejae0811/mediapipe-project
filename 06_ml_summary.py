@@ -3,44 +3,49 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split, GridSearchCV, learning_curve
-from sklearn.metrics import (
-    confusion_matrix, classification_report, roc_curve, auc, roc_auc_score,
-    balanced_accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
-)
-from sklearn.inspection import permutation_importance
-from sklearn.tree import DecisionTreeClassifier, plot_tree
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
+from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, confusion_matrix, f1_score, matthews_corrcoef, precision_score, recall_score, roc_auc_score, roc_curve, balanced_accuracy_score, auc
+from sklearn.model_selection import GridSearchCV, learning_curve, train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
 
 # 설정
 os.makedirs('./result_ml', exist_ok=True)
 
-# 데이터 전처리
-def data_processing():
+# 자동 변수 선택 함수
+def select_top_features_by_rf(df, target_col='label', top_n=10):
+    feature_cols = df.select_dtypes(include=['float64', 'int64']).columns.drop(target_col)
+    X_raw = df[feature_cols]
+    y = LabelEncoder().fit_transform(df[target_col])
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(X_raw, y)
+
+    importance_df = pd.DataFrame({
+        'feature': feature_cols,
+        'importance': rf.feature_importances_
+    }).sort_values(by='importance', ascending=False)
+
+    # 시각화
+    plt.figure(figsize=(10, 6))
+    sns.barplot(data=importance_df.head(top_n), x='importance', y='feature')
+    plt.title(f'Random Forest Top {top_n} Features')
+    plt.tight_layout()
+    plt.show()
+
+    return importance_df['feature'].head(top_n).tolist()
+
+# 데이터 전처리 함수
+def data_processing(selected_features):
     csv_files = glob.glob('./features_xlsx/*.xlsx')
     df = pd.concat([pd.read_excel(file, sheet_name=1) for file in csv_files], ignore_index=True)
     print(f'[정보] 총 데이터 수: {len(df)}개 샘플')
-
-    selected_features = [
-        'landmark23_jerk_min_distNorm',
-        'landmark11_jerk_max_distNorm',
-        'landmark31_jerk_max_raw',
-        'landmark24_jerk_std_distNorm',
-        'landmark25_jerk_max_raw',
-        'landmark31_jerk_min_raw',
-        'landmark31_jerk_max_timeNorm',
-        'landmark29_jerk_max_raw',
-        'landmark12_jerk_max_distNorm',
-        'landmark29_jerk_max_timeNorm',
-        'landmark16_jerk_mean_distNorm'
-    ]
 
     X_raw = df[selected_features]
     X = StandardScaler().fit_transform(X_raw)
@@ -48,82 +53,80 @@ def data_processing():
 
     return df, X_raw, X, y
 
-
 # 모델 정의
 def get_models():
     return {
-        'Decision Tree': {
-            'estimator': DecisionTreeClassifier(random_state=42),
+        'Logistic Regression': {
+            'estimator': LogisticRegression(max_iter=1000, random_state=42),
             'param_grid': {
-                'max_depth': [None, 3, 5, 7],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4],
-                'criterion': ['gini', 'entropy']
-            }
-        },
-        'Random Forest': {
-            'estimator': RandomForestClassifier(random_state=42),
-            'param_grid': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [None, 3, 5],
-                'min_samples_split': [2, 5],
-                'min_samples_leaf': [1, 2],
-                'criterion': ['gini', 'entropy']
+                'C': [0.1, 1],
+                'penalty': ['l2'],
+                'solver': ['liblinear']
             }
         },
         'KNN': {
             'estimator': KNeighborsClassifier(),
             'param_grid': {
-                'n_neighbors': [1, 3, 5],
-                'weights': ['uniform', 'distance'],
-                'metric': ['euclidean', 'manhattan']
+                'n_neighbors': [3, 5, 7],
+                'weights': ['uniform']
             }
         },
         'SVM': {
             'estimator': SVC(probability=True, random_state=42),
             'param_grid': {
-                'C': [0.1, 1, 10],
-                'kernel': ['linear', 'rbf'],
-                'gamma': ['scale', 0.01, 0.001]
+                'C': [1],
+                'kernel': ['rbf'],
+                'gamma': ['scale']
             }
         },
-        'Logistic Regression': {
-            'estimator': LogisticRegression(max_iter=1000, random_state=42),
+        'Decision Tree': {
+            'estimator': DecisionTreeClassifier(random_state=42),
             'param_grid': {
-                'C': [0.1, 1, 10],
-                'penalty': ['l1', 'l2'],
-                'solver': ['liblinear', 'saga']
+                'max_depth': [3, 5],
+                'min_samples_split': [2],
+                'min_samples_leaf': [1, 2],
+                'criterion': ['gini']
             }
         },
-        'Naive Bayes': {
-            'estimator': GaussianNB(),
-            'param_grid': {}
+        'Random Forest': {
+            'estimator': RandomForestClassifier(random_state=42),
+            'param_grid': {
+                'n_estimators': [50, 100],
+                'max_depth': [3, 5],
+                'min_samples_leaf': [1, 2],
+                'criterion': ['gini']
+            }
+        },
+        'LightGBM': {
+            'estimator': LGBMClassifier(random_state=42),
+            'param_grid': {
+                'n_estimators': [50, 100],
+                'max_depth': [3, 5],
+                'learning_rate': [0.1]
+            }
         },
         'XGBoost': {
             'estimator': XGBClassifier(random_state=42, eval_metric='logloss'),
             'param_grid': {
-                'n_estimators': [50, 100, 200],
-                'max_depth': [3, 5, 7],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'subsample': [0.8, 1.0]
+                'n_estimators': [50, 100],
+                'max_depth': [3],
+                'learning_rate': [0.1]
             }
         },
         'CatBoost': {
             'estimator': CatBoostClassifier(random_state=42, verbose=0),
             'param_grid': {
-                'depth': [3, 5, 7],
-                'learning_rate': [0.01, 0.1],
-                'iterations': [50, 100, 200]
+                'depth': [3, 5],
+                'iterations': [100],
+                'learning_rate': [0.1]
             }
         }
     }
-
 
 # 지표 계산
 def compute_metrics(y_true, y_pred, y_proba):
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel()
-
     return {
         'Accuracy': (tn+tp)/(tn+fp+fn+tp),
         'Precision': precision_score(y_true, y_pred),
@@ -136,76 +139,66 @@ def compute_metrics(y_true, y_pred, y_proba):
         'AUC': roc_auc_score(y_true, y_proba) if y_proba is not None else None
     }
 
-
 # 시각화
-def plot_confusion_matrix(model_name, y_test, y_pred):
-    cm = confusion_matrix(y_test, y_pred)
-
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(
-        cm,
-        annot=True,
-        fmt='d',
-        cmap='Blues',
-        xticklabels=['Beginner', 'Advanced'],
-        yticklabels=['Beginner', 'Advanced']
-    )
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    plt.figure(figsize=(5, 4))
+    cm_display = ConfusionMatrixDisplay.from_predictions(y_true, y_pred, cmap='Blues')
     plt.title(f'Confusion Matrix - {model_name}')
-    plt.ylabel('Actual')
-    plt.xlabel('Predicted')
     plt.tight_layout()
-    plt.show()
+    plt.close()
 
-
-def plot_roc_curve(model_name, y_test, y_proba):
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
-    roc_auc = auc(fpr, tpr)
-
-    plt.figure()
-    plt.plot(fpr, tpr, lw=2, label=f'AUC = {roc_auc:.2f}')
-    plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+def plot_roc_curve(y_true, y_proba, model_name):
+    fpr, tpr, _ = roc_curve(y_true, y_proba)
+    auc_score = auc(fpr, tpr)
+    plt.figure(figsize=(5, 4))
+    plt.plot(fpr, tpr, label=f'AUC = {auc_score:.2f}')
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.title(f'ROC Curve - {model_name}')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title(f'ROC Curve - {model_name}')
-    plt.legend(loc='lower right')
-    plt.grid(True, alpha=0.5)
+    plt.legend()
     plt.tight_layout()
-    plt.show()
+    plt.close()
 
-
-def plot_learning_curve(model_name, estimator, X_train, y_train):
-    train_sizes, train_scores, val_scores = learning_curve(
-        estimator,
-        X_train,
-        y_train,
-        train_sizes=np.linspace(0.1,1.0,5),
-        cv=3
+def plot_learning_curve(estimator, X, y, model_name):
+    train_sizes, train_scores, test_scores = learning_curve(
+        estimator, X, y, cv=5, scoring='f1', n_jobs=-1, train_sizes=np.linspace(0.1, 1.0, 5)
     )
-
-    plt.figure()
-    plt.plot(train_sizes, train_scores.mean(axis=1), 'o-', label='Train')
-    plt.plot(train_sizes, val_scores.mean(axis=1), 'o-', label='Validation')
+    plt.figure(figsize=(6, 4))
+    plt.plot(train_sizes, train_scores.mean(axis=1), label='Train')
+    plt.plot(train_sizes, test_scores.mean(axis=1), label='CV')
     plt.title(f'Learning Curve - {model_name}')
     plt.xlabel('Training Size')
-    plt.ylabel('Accuracy')
+    plt.ylabel('F1 Score')
     plt.legend()
-    plt.grid(axis='both', alpha=0.5)
     plt.tight_layout()
-    plt.show()
+    plt.close()
 
+def plot_feature_importance(model, X_raw, y, feature_names, model_name):
+    if hasattr(model, 'feature_importances_'):
+        imp = model.feature_importances_
+        idx = np.argsort(imp)[::-1]
+        plt.figure(figsize=(8, 5))
+        sns.barplot(x=imp[idx][:10], y=np.array(feature_names)[idx][:10])
+        plt.title(f'Feature Importance - {model_name}')
+        plt.tight_layout()
+        plt.close()
 
-def plot_accuracy_bar(model_name, train_score, test_score):
-    plt.figure()
-    plt.bar(['Train Accuracy', 'Test Accuracy'], [train_score, test_score], color=['#1f77b4', '#ff7f0e'])
-    plt.ylim(0, 1.1)
-    plt.ylabel('Accuracy')
-    plt.title(f'Accuracy - {model_name} (Train vs Test)')
-    for i, v in enumerate([train_score, test_score]):
-        plt.text(i, v + 0.02, f'{v:.2f}', ha='center')
-    plt.grid(axis='y', alpha=0.5)
+    # Permutation importance
+    result = permutation_importance(model, X_raw, y, n_repeats=10, random_state=42)
+    idx = result.importances_mean.argsort()[::-1]
+    plt.figure(figsize=(8, 5))
+    sns.barplot(x=result.importances_mean[idx][:10], y=np.array(feature_names)[idx][:10])
+    plt.title(f'Permutation Importance - {model_name}')
     plt.tight_layout()
-    plt.show()
+    plt.close()
 
+def plot_accuracy_bar(results_df):
+    plt.figure(figsize=(8, 5))
+    sns.barplot(data=results_df.sort_values('Accuracy', ascending=False), x='Accuracy', y='Model')
+    plt.title('Model Accuracy Comparison')
+    plt.tight_layout()
+    plt.close()
 
 # 모델 실행
 def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
@@ -213,7 +206,7 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
     param_grid = model_info['param_grid']
 
     if param_grid:
-        grid = GridSearchCV(estimator, param_grid, cv=3, scoring='f1', n_jobs=-1)
+        grid = GridSearchCV(estimator, param_grid, cv=5, scoring='f1', n_jobs=-1)
         grid.fit(X_train, y_train)
         best_model = grid.best_estimator_
     else:
@@ -229,94 +222,45 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw):
     print(f'\n========== {model_name} ==========')
     print(classification_report(y_test, y_pred))
 
-    # 시각화
-    plot_confusion_matrix(model_name, y_test, y_pred)
-    if y_proba is not None:
-        plot_roc_curve(model_name, y_test, y_proba)
-    plot_learning_curve(model_name, best_model, X_train, y_train)
+    return metrics, best_model, y_pred, y_proba
 
-    train_score = best_model.score(X_train, y_train)
-    test_score = best_model.score(X_test, y_test)
-    plot_accuracy_bar(model_name, train_score, test_score)
-
-    # Feature Importance
-    if hasattr(best_model, 'feature_importances_'):
-        importances = best_model.feature_importances_
-        indices = np.argsort(importances)[::-1]
-        features = X_raw.columns[indices]
-
-        plt.figure(figsize=(12, 6))
-        plt.bar(range(len(features)), importances[indices], align='center')
-        plt.xticks(range(len(features)), features, rotation=45, ha='right', fontsize=10)
-        plt.ylabel('Importance Score')
-        plt.title(f'Feature Importance - {model_name}')
-        plt.grid(axis='y', alpha=0.5)
-        plt.tight_layout()
-        plt.show()
-    else:
-        result = permutation_importance(
-            estimator=best_model,
-            X=X_test,
-            y=y_test,
-            scoring='roc_auc',
-            n_repeats=30,
-            random_state=42,
-            n_jobs=-1
-        )
-        importances = result.importances_mean
-        stds = result.importances_std
-        indices = np.argsort(importances)[::-1]
-        features = X_raw.columns[indices]
-
-        plt.figure(figsize=(12, 6))
-        plt.bar(range(len(features)), importances[indices], yerr=stds[indices], align='center')
-        plt.xticks(range(len(features)), features, rotation=45, ha='right', fontsize=10)
-        plt.ylabel('Decrease in AUC')
-        plt.title(f'Permutation Importance - {model_name}')
-        plt.grid(True, alpha=0.5)
-        plt.tight_layout()
-        plt.show()
-
-    if model_name == 'Decision Tree':
-        from sklearn.tree import plot_tree
-
-        plt.figure(figsize=(30, 10))
-        plot_tree(
-            best_model,
-            feature_names=X_raw.columns,
-            class_names=['Beginner', 'Advanced'],  # 또는 ['None', 'Injury']처럼 클래스 라벨에 맞게
-            filled=True,
-            rounded=True,
-            fontsize=10
-        )
-        plt.title(f"Decision Tree Structure")
-        plt.tight_layout()
-        plt.show()
-
-        print("Max Depth of the best tree:", best_model.get_depth())
-
-    return metrics
-
-
-# 실행
+# 함수 실행
 if __name__ == '__main__':
-    df, X_raw, X, y = data_processing()
+    # 전체 데이터프레임 로딩
+    csv_files = glob.glob('./features_xlsx/*.xlsx')
+    df_all = pd.concat([pd.read_excel(file, sheet_name=1) for file in csv_files], ignore_index=True)
+
+    # 변수 자동 선택
+    selected_features = select_top_features_by_rf(df_all, target_col='label', top_n=10)
+    print(f"\n 랜덤 포레스트 자동 선택된 변수 목록:\n{selected_features}")
+
+    # 데이터 전처리
+    df, X_raw, X, y = data_processing(selected_features)
+
+    # 학습/테스트 분할
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
+    # 모델 학습 및 평가
     models = get_models()
     results = []
-
     for model_name, model_info in models.items():
-        metrics = run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw)
+        metrics, best_model, y_pred, y_proba = run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_raw)
         results.append(metrics)
+
+        # 시각화
+        plot_confusion_matrix(y_test, y_pred, model_name)
+        if y_proba is not None:
+            plot_roc_curve(y_test, y_proba, model_name)
+        plot_learning_curve(best_model, X, y, model_name)
+        plot_feature_importance(best_model, X_raw, y, selected_features, model_name)
 
     results_df = pd.DataFrame(results)
     results_df.sort_values(by='F1', ascending=False, inplace=True)
 
-    print("\n전체 모델 성능 요약:")
+    print("\n 전체 모델 성능 요약:")
     print(
         results_df[['Model', 'Accuracy', 'Precision', 'Recall', 'F1', 'Balanced_Accuracy', 'MCC', 'AUC']]
-        .to_string(index=False, float_format='{:0.4f}'.format)
+        .to_string(index=False, float_format='{:0.5f}'.format)
     )
 
     results_df.to_excel('./result_ml/model_comparison.xlsx', index=False)
