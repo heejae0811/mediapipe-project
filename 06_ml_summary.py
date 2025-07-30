@@ -17,20 +17,20 @@ from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
 
 # 설정
-os.makedirs('./result_ml', exist_ok=True)
+os.makedirs('./result', exist_ok=True)
 RANDOM_STATE = 42
 
 # 데이터 로딩 및 전처리
 def load_and_split_data():
     csv_files = glob.glob('./features_xlsx/*.xlsx')
-    print(f"분석할 파일 수: {len(csv_files)}개")
+    print(f"분석할 파일 수 - {len(csv_files)}개")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
+    df_all = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
     y_all = LabelEncoder().fit_transform(df_all['label'])
 
     class_0 = np.sum(y_all == 0)
     class_1 = np.sum(y_all == 1)
-    print(f"라벨 분포 - 0: {class_0}개, 1: {class_1}개")
+    print(f"라벨 분포 - 0: {class_0}개 / 1: {class_1}개")
 
     feature_cols = df_all.select_dtypes(include=['float64', 'int64']).columns.drop('label')
     X_raw_all = df_all[feature_cols]
@@ -56,6 +56,7 @@ def select_top_features_by_rf(X_train, y_train, feature_cols, top_n=10):
     plt.figure(figsize=(10, 6))
     sns.barplot(x='importance', y='feature', data=importance_df.sort_values(by='importance', ascending=False).head(top_n))
     plt.title(f'Random Forest Top {top_n} Features')
+    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
     plt.tight_layout()
     plt.show()
 
@@ -149,7 +150,7 @@ def compute_metrics(y_true, y_pred, y_proba):
 
 # 시각화 함수들
 def plot_confusion_matrix(y_true, y_pred, model_name):
-    ConfusionMatrixDisplay.from_predictions(y_true, y_pred, cmap='Blues')
+    ConfusionMatrixDisplay.from_predictions(y_true, y_pred, display_labels=['Beginner', 'Trained'], cmap='Blues')
     plt.title(f'Confusion Matrix - {model_name}')
     plt.tight_layout()
     plt.show()
@@ -161,7 +162,8 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.title(f'ROC Curve - {model_name}')
     plt.xlabel('FPR')
     plt.ylabel('TPR')
-    plt.legend()
+    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
+    plt.legend(loc='lower right')
     plt.tight_layout()
     plt.show()
 
@@ -170,7 +172,8 @@ def plot_learning_curve(estimator, X, y, model_name):
     plt.plot(sizes, train_scores.mean(axis=1), label='Train')
     plt.plot(sizes, val_scores.mean(axis=1), label='Validation')
     plt.title(f'Learning Curve - {model_name}')
-    plt.legend()
+    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
+    plt.legend(loc='lower right')
     plt.tight_layout()
     plt.show()
 
@@ -180,6 +183,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
         sorted_idx = np.argsort(imp)[::-1]
         sns.barplot(x=imp[sorted_idx][:10], y=np.array(feature_names)[sorted_idx][:10])
         plt.title(f'Feature Importance - {model_name}')
+        plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
         plt.tight_layout()
         plt.show()
 
@@ -187,6 +191,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
     idx = result.importances_mean.argsort()[::-1]
     sns.barplot(x=result.importances_mean[idx][:10], y=np.array(feature_names)[idx][:10])
     plt.title(f'Permutation Importance - {model_name}')
+    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
     plt.tight_layout()
     plt.show()
 
