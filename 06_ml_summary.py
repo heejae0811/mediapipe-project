@@ -2,7 +2,8 @@ import os, glob
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
+from sklearn.tree import plot_tree
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
@@ -49,11 +50,12 @@ def load_and_split_data():
 def select_top_features_by_rf(X_train, y_train, feature_cols, top_n=10):
     rf = RandomForestClassifier(n_estimators=100, random_state=RANDOM_STATE)
     rf.fit(X_train, y_train)
+
     importances = rf.feature_importances_
     importance_df = pd.DataFrame({'feature': feature_cols, 'importance': importances})
     top_features = importance_df.sort_values(by='importance', ascending=False).head(top_n)['feature'].tolist()
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 6))
     sns.barplot(x='importance', y='feature', data=importance_df.sort_values(by='importance', ascending=False).head(top_n))
     plt.title(f'Random Forest Top {top_n} Features')
     plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
@@ -160,18 +162,63 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.plot(fpr, tpr, label=f'AUC = {auc(fpr, tpr):.2f}')
     plt.plot([0, 1], [0, 1], 'k--')
     plt.title(f'ROC Curve - {model_name}')
-    plt.xlabel('FPR')
-    plt.ylabel('TPR')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
     plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
     plt.legend(loc='lower right')
     plt.tight_layout()
     plt.show()
 
+def plot_combined_roc_curves(results, X_test, y_test):
+    colors = ['pink', 'red', 'orange', 'green', 'blue', 'navy', 'purple', 'brown']
+    plt.figure(figsize=(10, 6))
+
+    for result, color in zip(results, colors):
+        name = result['Model']
+        model = result.get('Best Model')
+
+        if model is None:
+            print(f"⚠️ {name}: Best Model 없음")
+            continue
+
+        try:
+            if hasattr(model, "predict_proba"):
+                y_prob = model.predict_proba(X_test)[:, 1]
+            elif hasattr(model, "decision_function"):
+                y_prob = model.decision_function(X_test)
+            else:
+                print(f"❌ {name}는 확률 예측 불가")
+                continue
+
+            fpr, tpr, _ = roc_curve(y_test, y_prob)
+            roc_auc = auc(fpr, tpr)
+            plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.2f})', color=color)
+
+        except Exception as e:
+            print(f"❌ {name} 예측 실패: {e}")
+
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve (All Models)')
+    plt.legend(loc='lower right')
+    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
+    plt.tight_layout()
+    plt.show()
+
 def plot_learning_curve(estimator, X, y, model_name):
     sizes, train_scores, val_scores = learning_curve(estimator, X, y, cv=5, scoring='f1')
-    plt.plot(sizes, train_scores.mean(axis=1), label='Train')
-    plt.plot(sizes, val_scores.mean(axis=1), label='Validation')
+    train_mean = train_scores.mean(axis=1)
+    train_std = train_scores.std(axis=1)
+    val_mean = val_scores.mean(axis=1)
+    val_std = val_scores.std(axis=1)
+    plt.plot(sizes, train_mean, 'o-', label='Train')
+    plt.plot(sizes, val_mean, 'o-', label='Validation')
+    plt.fill_between(sizes, train_mean - train_std, train_mean + train_std, alpha=0.2)
+    plt.fill_between(sizes, val_mean - val_std, val_mean + val_std, alpha=0.2)
     plt.title(f'Learning Curve - {model_name}')
+    plt.xlabel('Training Set Size')
+    plt.ylabel('F1-score')
     plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
     plt.legend(loc='lower right')
     plt.tight_layout()
@@ -181,6 +228,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
     if hasattr(model, 'feature_importances_'):
         imp = model.feature_importances_
         sorted_idx = np.argsort(imp)[::-1]
+        plt.figure(figsize=(12, 6))
         sns.barplot(x=imp[sorted_idx][:10], y=np.array(feature_names)[sorted_idx][:10])
         plt.title(f'Feature Importance - {model_name}')
         plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
@@ -189,11 +237,32 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
 
     result = permutation_importance(model, X, y, n_repeats=10, random_state=RANDOM_STATE)
     idx = result.importances_mean.argsort()[::-1]
+    plt.figure(figsize=(12, 6))
     sns.barplot(x=result.importances_mean[idx][:10], y=np.array(feature_names)[idx][:10])
     plt.title(f'Permutation Importance - {model_name}')
     plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
     plt.tight_layout()
     plt.show()
+
+def plot_decision_tree(model, feature_names, class_names=['Class 0', 'Class 1'], model_name='Decision Tree'):
+    if not hasattr(model, 'tree_'):
+        print(f"❌ {model_name}는 결정트리 기반 모델이 아닙니다.")
+        return
+
+    plt.figure(figsize=(30, 10))
+    plot_tree(
+        model,
+        feature_names=feature_names,
+        class_names=class_names,
+        filled=True,
+        rounded=True,
+        fontsize=10
+    )
+    plt.title(f"Decision Tree Structure - {model_name}")
+    plt.tight_layout()
+    plt.show()
+
+    print(f"Max Depth of {model_name}: {model.get_depth()}")
 
 # 모델 실행
 def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_all, y_all, feature_names):
@@ -210,9 +279,14 @@ def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_all, y
     metrics = compute_metrics(y_test, y_pred, y_proba)
     metrics['Model'] = model_name
     metrics['Best Params'] = str(best_model.get_params())
+    metrics['Best Model'] = best_model
 
     print(f"\n========== {model_name} ==========")
+    print(f"Confusion Matrix:")
+    print(confusion_matrix(y_test, y_pred))
     print(classification_report(y_test, y_pred))
+    print(f"Best parameters:  {grid.best_params_}")
+    print(f"Best f1 score (CV 평균):  {grid.best_score_:.5f}")
 
     # 시각화
     plot_confusion_matrix(y_test, y_pred, model_name)
@@ -240,9 +314,16 @@ if __name__ == '__main__':
         metrics = run_model(name, info, X_train, X_test, y_train, y_test, X_all, y_all, top_features)
         results.append(metrics)
 
+    dt_result = [r for r in results if r['Model'] == 'Decision Tree']
+    if dt_result:
+        best_tree = dt_result[0]['Best Model']
+        plot_decision_tree(best_tree, top_features, class_names=['Beginner', 'Trained'], model_name='Decision Tree')
+
+    plot_combined_roc_curves(results, X_test, y_test)
+
     results_df = pd.DataFrame(results)
     results_df.sort_values(by='F1', ascending=False, inplace=True)
-    print("\n전체 모델 성능 요약:")
+    print("\n✅ 전체 모델 성능 요약")
     print(results_df[['Model', 'Accuracy', 'Precision', 'Recall', 'F1', 'AUC']].to_string(index=False))
 
     results_df.to_excel('./result/model_comparison.xlsx', index=False)
