@@ -1,4 +1,4 @@
-import os, glob
+import glob
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -18,51 +18,50 @@ from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
 
 # 설정
-os.makedirs('./result', exist_ok=True)
 RANDOM_STATE = 42
 
-# 데이터 로딩 및 전처리
-def load_and_split_data():
-    csv_files = glob.glob('./features_xlsx/*.xlsx')
-    print(f"분석할 파일 수 - {len(csv_files)}개")
+# 데이터 전처리
+def data_processing():
+    csv_files = glob.glob('./features_xlsx_일대일/*.xlsx')
+    print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
+    df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
     y_all = LabelEncoder().fit_transform(df_all['label'])
-
-    class_0 = np.sum(y_all == 0)
-    class_1 = np.sum(y_all == 1)
-    print(f"라벨 분포 - 0: {class_0}개 / 1: {class_1}개")
+    print(f"라벨 분포 - 0: {(y_all == 0).sum()}개 / 1: {(y_all == 1).sum()}개")
 
     feature_cols = df_all.select_dtypes(include=['float64', 'int64']).columns.drop('label')
-    X_raw_all = df_all[feature_cols]
-    X_scaled_all = StandardScaler().fit_transform(X_raw_all)
+    raw_features = df_all[feature_cols]
+    X_train_raw, X_test_raw, y_train, y_test = train_test_split(raw_features, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled_all, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE
-    )
-
-    raw_train = X_raw_all.iloc[X_train.shape[0] * -1:]
-    raw_test = X_raw_all.iloc[:X_test.shape[0]]
-
-    return df_all, X_train, X_test, y_train, y_test, raw_train, raw_test, feature_cols
+    return df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols
 
 # 랜덤 포레스트 변수 선택
-def select_top_features_by_rf(X_train, y_train, feature_cols, top_n=10):
-    rf = RandomForestClassifier(n_estimators=100, random_state=RANDOM_STATE)
+def select_top_features_by_rf(X_train, y_train, feature_cols, top_n=20):
+    rf = RandomForestClassifier(
+        n_estimators=500,
+        max_depth=None,
+        max_features='sqrt',
+        class_weight='balanced',
+        random_state=RANDOM_STATE,
+        n_jobs=-1
+    )
     rf.fit(X_train, y_train)
-
     importances = rf.feature_importances_
     importance_df = pd.DataFrame({'feature': feature_cols, 'importance': importances})
-    top_features = importance_df.sort_values(by='importance', ascending=False).head(top_n)['feature'].tolist()
+    importance_df = importance_df.sort_values(by='importance', ascending=False)
+    print(f"\n🎯 Random Forest Top {top_n} 중요 변수:")
+
+    for i, row in importance_df.head(top_n).iterrows():
+        print(f"{i+1:2d}. {row['feature']} ({row['importance']:.5f})")
 
     plt.figure(figsize=(12, 6))
-    sns.barplot(x='importance', y='feature', data=importance_df.sort_values(by='importance', ascending=False).head(top_n))
+    sns.barplot(x='importance', y='feature', data=importance_df.head(top_n))
     plt.title(f'Random Forest Top {top_n} Features')
-    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
+    plt.grid(True, linestyle='--', linewidth=0.4, alpha=0.6)
     plt.tight_layout()
     plt.show()
 
-    return top_features
+    return importance_df['feature'].tolist()
 
 # 모델 정의
 def get_models():
@@ -78,14 +77,14 @@ def get_models():
         'KNN': {
             'estimator': KNeighborsClassifier(),
             'param_grid': {
-                'n_neighbors': [3, 5, 7],
+                'n_neighbors': [1, 3, 5],
                 'weights': ['uniform']
             }
         },
         'SVM': {
             'estimator': SVC(probability=True, random_state=RANDOM_STATE),
             'param_grid': {
-                'C': [1],
+                'C': [0.1, 1, 10],
                 'kernel': ['rbf'],
                 'gamma': ['scale']
             }
@@ -93,8 +92,8 @@ def get_models():
         'Decision Tree': {
             'estimator': DecisionTreeClassifier(random_state=RANDOM_STATE),
             'param_grid': {
-                'max_depth': [3, 5],
-                'min_samples_split': [2],
+                'max_depth': [2, 3, 4],
+                'min_samples_split': [2, 3],
                 'min_samples_leaf': [1, 2],
                 'criterion': ['gini']
             }
@@ -109,7 +108,7 @@ def get_models():
             }
         },
         'LightGBM': {
-            'estimator': LGBMClassifier(random_state=RANDOM_STATE),
+            'estimator': LGBMClassifier(random_state=RANDOM_STATE, verbose=-1),
             'param_grid': {
                 'n_estimators': [50, 100],
                 'max_depth': [3, 5],
@@ -121,7 +120,7 @@ def get_models():
             'param_grid': {
                 'n_estimators': [50, 100],
                 'max_depth': [3],
-                'learning_rate': [0.1]
+                'learning_rate': [0.05, 0.1, 0.2]
             }
         },
         'CatBoost': {
@@ -129,7 +128,7 @@ def get_models():
             'param_grid': {
                 'depth': [3, 5],
                 'iterations': [100],
-                'learning_rate': [0.1]
+                'learning_rate': [0.05, 0.1, 0.2]
             }
         }
     }
@@ -138,10 +137,11 @@ def get_models():
 def compute_metrics(y_true, y_pred, y_proba):
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel()
+
     return {
-        'Accuracy': (tn + tp) / (tn + fp + fn + tp),
-        'Precision': precision_score(y_true, y_pred),
-        'Recall': recall_score(y_true, y_pred),
+        'Accuracy': (tn + tp) / (tn + fp + fn + tp),    # 전체 중 맞춘 비율
+        'Precision': precision_score(y_true, y_pred),   # 1 이라고 예측한 것 중 진짜 1의 비율
+        'Recall': recall_score(y_true, y_pred),         # 실제 1 중에서 1 이라고 맞춘 비율
         'F1': f1_score(y_true, y_pred),
         'Balanced_Accuracy': balanced_accuracy_score(y_true, y_pred),
         'Specificity': tn / (tn + fp),
@@ -178,7 +178,7 @@ def plot_combined_roc_curves(results, X_test, y_test):
         model = result.get('Best Model')
 
         if model is None:
-            print(f"⚠️ {name}: Best Model 없음")
+            print(f"⚠ {name}: Best Model 없음")
             continue
 
         try:
@@ -187,7 +187,7 @@ def plot_combined_roc_curves(results, X_test, y_test):
             elif hasattr(model, "decision_function"):
                 y_prob = model.decision_function(X_test)
             else:
-                print(f"❌ {name}는 확률 예측 불가")
+                print(f"⚠ {name}는 확률 예측 불가")
                 continue
 
             fpr, tpr, _ = roc_curve(y_test, y_prob)
@@ -195,7 +195,7 @@ def plot_combined_roc_curves(results, X_test, y_test):
             plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.2f})', color=color)
 
         except Exception as e:
-            print(f"❌ {name} 예측 실패: {e}")
+            print(f"⚠ {name} 예측 실패: {e}")
 
     plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
     plt.xlabel('False Positive Rate')
@@ -244,7 +244,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
     plt.tight_layout()
     plt.show()
 
-def plot_decision_tree(model, feature_names, class_names=['Class 0', 'Class 1'], model_name='Decision Tree'):
+def plot_decision_tree(model, feature_names, class_names=['Beginner', 'Trained'], model_name='Decision Tree'):
     if not hasattr(model, 'tree_'):
         print(f"❌ {model_name}는 결정트리 기반 모델이 아닙니다.")
         return
@@ -265,66 +265,75 @@ def plot_decision_tree(model, feature_names, class_names=['Class 0', 'Class 1'],
     print(f"Max Depth of {model_name}: {model.get_depth()}")
 
 # 모델 실행
-def run_model(model_name, model_info, X_train, X_test, y_train, y_test, X_all, y_all, feature_names):
-    estimator = model_info['estimator']
-    param_grid = model_info['param_grid']
-
-    grid = GridSearchCV(estimator, param_grid, cv=5, scoring='f1', n_jobs=-1)
+def run_model(name, model_info, X_train, X_test, y_train, y_test):
+    grid = GridSearchCV(model_info['estimator'], model_info['param_grid'], scoring='f1', cv=5, n_jobs=-1)
     grid.fit(X_train, y_train)
     best_model = grid.best_estimator_
-
     y_pred = best_model.predict(X_test)
-    y_proba = best_model.predict_proba(X_test)[:, 1] if hasattr(best_model, 'predict_proba') else None
+    y_proba = best_model.predict_proba(X_test)[:, 1] if hasattr(best_model, "predict_proba") else None
 
-    metrics = compute_metrics(y_test, y_pred, y_proba)
-    metrics['Model'] = model_name
-    metrics['Best Params'] = str(best_model.get_params())
-    metrics['Best Model'] = best_model
-
-    print(f"\n========== {model_name} ==========")
-    print(f"Confusion Matrix:")
+    print(f"\n========== {name} ==========")
     print(confusion_matrix(y_test, y_pred))
     print(classification_report(y_test, y_pred))
-    print(f"Best parameters:  {grid.best_params_}")
-    print(f"Best f1 score (CV 평균):  {grid.best_score_:.5f}")
+    print(f"Best Params: {grid.best_params_}")
+    print(f"Best F1 (CV): {grid.best_score_:.4f}")
 
-    # 시각화
-    plot_confusion_matrix(y_test, y_pred, model_name)
+    plot_confusion_matrix(y_test, y_pred, name)
     if y_proba is not None:
-        plot_roc_curve(y_test, y_proba, model_name)
-    plot_learning_curve(best_model, X_all, y_all, model_name)
-    plot_feature_importance(best_model, X_train, y_train, feature_names, model_name)
+        plot_roc_curve(y_test, y_proba, name)
 
-    return metrics
+    return {
+        'Model': name,
+        'Best Params': str(grid.best_params_),
+        'Best Model': best_model,
+        **compute_metrics(y_test, y_pred, y_proba)
+    }
 
-# 실행
 if __name__ == '__main__':
-    df_all, X_train_full, X_test_full, y_train, y_test, raw_train, raw_test, feature_cols = load_and_split_data()
-    top_features = select_top_features_by_rf(X_train_full, y_train, feature_cols, top_n=10)
+    # 1. 데이터 로딩 및 분할
+    df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols = data_processing()
 
-    # 변수 재선택 후 스케일 재적용
-    X_train = StandardScaler().fit_transform(raw_train[top_features])
-    X_test = StandardScaler().fit_transform(raw_test[top_features])
-    X_all = np.concatenate([X_train, X_test], axis=0)
-    y_all = np.concatenate([y_train, y_test], axis=0)
+    # 2. 랜덤포레스트로 Top 변수 추천
+    top_features_all = select_top_features_by_rf(X_train_raw, y_train, feature_cols, top_n=20)
 
-    models = get_models()
+    # 3. 변수 선택 (터미널 입력)
+    input_str = input("\n📥 사용할 변수명을 쉼표(,)로 입력하세요:\n")
+    selected_features = [var.strip() for var in input_str.split(',') if var.strip()]
+    for var in selected_features:
+        if var not in X_train_raw.columns:
+            raise ValueError(f"❌ 변수 '{var}'는 데이터에 존재하지 않습니다.")
+
+    # 4. 표준화 (StandardScaler)
+    scaler = StandardScaler()
+    scaler.fit(X_train_raw[selected_features])
+    X_train = pd.DataFrame(scaler.transform(X_train_raw[selected_features]), columns=selected_features)
+    X_test = pd.DataFrame(scaler.transform(X_test_raw[selected_features]), columns=selected_features)
+
+    # 5. 모델 학습 및 결과 저장
     results = []
-    for name, info in models.items():
-        metrics = run_model(name, info, X_train, X_test, y_train, y_test, X_all, y_all, top_features)
+    for model_name, model_info in get_models().items():
+        metrics = run_model(model_name, model_info, X_train, X_test, y_train, y_test)
         results.append(metrics)
 
-    dt_result = [r for r in results if r['Model'] == 'Decision Tree']
-    if dt_result:
-        best_tree = dt_result[0]['Best Model']
-        plot_decision_tree(best_tree, top_features, class_names=['Beginner', 'Trained'], model_name='Decision Tree')
-
+    # 6. 전체 모델 ROC 커브 통합 시각화
     plot_combined_roc_curves(results, X_test, y_test)
 
+    # 7. 모델별 추가 시각화 (중요도, 학습곡선, DT 시각화)
+    for res in results:
+        model = res['Best Model']
+        model_name = res['Model']
+
+        plot_feature_importance(model, X_train, y_train, selected_features, model_name)
+        plot_learning_curve(model, X_train, y_train, model_name)
+
+        if model_name == 'Decision Tree':
+            plot_decision_tree(model, selected_features, class_names=['Beginner', 'Trained'], model_name='Decision Tree')
+
+    # 8. 결과 요약 및 엑셀 저장
     results_df = pd.DataFrame(results)
     results_df.sort_values(by='F1', ascending=False, inplace=True)
-    print("\n✅ 전체 모델 성능 요약")
+    print("\n✅ 전체 모델 성능 요약:")
     print(results_df[['Model', 'Accuracy', 'Precision', 'Recall', 'F1', 'AUC']].to_string(index=False))
 
     results_df.to_excel('./result/model_comparison.xlsx', index=False)
-    print("\n✅ './result/model_comparison.xlsx' 에 결과 저장 완료.")
+    print("\n✅ 결과 저장 완료: ./result/model_comparison.xlsx")
