@@ -25,7 +25,7 @@ def data_processing():
     csv_files = glob.glob('./features_xlsx_일대일/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
+    df_all = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
     y_all = LabelEncoder().fit_transform(df_all['label'])
     print(f"라벨 분포 - 0: {(y_all == 0).sum()}개 / 1: {(y_all == 1).sum()}개")
 
@@ -264,6 +264,27 @@ def plot_decision_tree(model, feature_names, class_names=['Beginner', 'Trained']
 
     print(f"Max Depth of {model_name}: {model.get_depth()}")
 
+def visualize_model_results(model, model_name, X_train, y_train, X_test, y_test, selected_features):
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+
+    # Confusion Matrix
+    plot_confusion_matrix(y_test, y_pred, model_name)
+
+    # ROC Curve (개별)
+    if y_proba is not None:
+        plot_roc_curve(y_test, y_proba, model_name)
+
+    # Learning Curve
+    plot_learning_curve(model, X_train, y_train, model_name)
+
+    # Feature Importance
+    plot_feature_importance(model, X_train, y_train, selected_features, model_name)
+
+    # Decision Tree 시각화 (해당 모델일 경우만)
+    if model_name == 'Decision Tree':
+        plot_decision_tree(model, selected_features, class_names=['Beginner', 'Trained'], model_name=model_name)
+
 # 모델 실행
 def run_model(name, model_info, X_train, X_test, y_train, y_test):
     grid = GridSearchCV(model_info['estimator'], model_info['param_grid'], scoring='f1', cv=5, n_jobs=-1)
@@ -277,10 +298,6 @@ def run_model(name, model_info, X_train, X_test, y_train, y_test):
     print(classification_report(y_test, y_pred))
     print(f"Best Params: {grid.best_params_}")
     print(f"Best F1 (CV): {grid.best_score_:.4f}")
-
-    plot_confusion_matrix(y_test, y_pred, name)
-    if y_proba is not None:
-        plot_roc_curve(y_test, y_proba, name)
 
     return {
         'Model': name,
@@ -315,19 +332,15 @@ if __name__ == '__main__':
         metrics = run_model(model_name, model_info, X_train, X_test, y_train, y_test)
         results.append(metrics)
 
-    # 6. 전체 모델 ROC 커브 통합 시각화
-    plot_combined_roc_curves(results, X_test, y_test)
-
-    # 7. 모델별 추가 시각화 (중요도, 학습곡선, DT 시각화)
+    # 6. 모델별 추가 시각화 (중요도, 학습곡선, DT 시각화)
     for res in results:
         model = res['Best Model']
         model_name = res['Model']
 
-        plot_feature_importance(model, X_train, y_train, selected_features, model_name)
-        plot_learning_curve(model, X_train, y_train, model_name)
+        visualize_model_results(model, model_name, X_train, y_train, X_test, y_test, selected_features)
 
-        if model_name == 'Decision Tree':
-            plot_decision_tree(model, selected_features, class_names=['Beginner', 'Trained'], model_name='Decision Tree')
+    # 7. 전체 모델 ROC 커브 통합 시각화
+    plot_combined_roc_curves(results, X_test, y_test)
 
     # 8. 결과 요약 및 엑셀 저장
     results_df = pd.DataFrame(results)
