@@ -12,7 +12,7 @@ FRAME_INTERVAL = 1
 
 # Mediapipe 초기화
 mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5)
+pose = mp_pose.Pose(static_image_mode=False, model_complexity=2, min_detection_confidence=0.5)
 
 cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
@@ -73,12 +73,7 @@ velocity_data = {'id': FILE_ID, 'label': LABEL}
 accel_data = {'id': FILE_ID, 'label': LABEL}
 jerk_data = {'id': FILE_ID, 'label': LABEL}
 vis_data = {'id': FILE_ID, 'label': LABEL}
-
-data_map = {
-    'velocity': velocity_data,
-    'accel': accel_data,
-    'jerk': jerk_data
-}
+data_map = {'velocity': velocity_data, 'accel': accel_data, 'jerk': jerk_data}
 
 # 정규화
 total_time = frame_idx / fps
