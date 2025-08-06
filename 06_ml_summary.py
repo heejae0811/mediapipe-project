@@ -3,19 +3,19 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
-from sklearn.tree import plot_tree
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, confusion_matrix, f1_score, matthews_corrcoef, precision_score, recall_score, roc_auc_score, roc_curve, balanced_accuracy_score, auc
-from sklearn.model_selection import GridSearchCV, learning_curve, train_test_split
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
+from sklearn.metrics import confusion_matrix, classification_report, f1_score, matthews_corrcoef, precision_score, recall_score, roc_auc_score, roc_curve, auc, balanced_accuracy_score, ConfusionMatrixDisplay
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold, learning_curve
+from sklearn.feature_selection import RFECV
+from sklearn.inspection import permutation_importance
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 # 설정
 RANDOM_STATE = 42
@@ -25,7 +25,7 @@ def data_processing():
     csv_files = glob.glob('./features_xlsx_일대일/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
+    df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
     y_all = LabelEncoder().fit_transform(df_all['label'])
     print(f"라벨 분포 - 0: {(y_all == 0).sum()}개 / 1: {(y_all == 1).sum()}개")
 
@@ -36,7 +36,7 @@ def data_processing():
     return df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols
 
 # 랜덤 포레스트 변수 선택
-def select_top_features_by_rf(X_train, y_train, feature_cols, top_n=20):
+def select_features_by_rf(X_train, y_train, feature_cols, top_n=50):
     rf = RandomForestClassifier(
         n_estimators=500,
         max_depth=None,
@@ -61,7 +61,40 @@ def select_top_features_by_rf(X_train, y_train, feature_cols, top_n=20):
     plt.tight_layout()
     plt.show()
 
-    return importance_df['feature'].tolist()
+    return importance_df['feature'].tolist()[:top_n]
+
+# RFECV 변수 선택
+def select_features_by_rfecv(X_train, y_train):
+    estimator = LogisticRegression(max_iter=1000, solver='liblinear', random_state=RANDOM_STATE)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+
+    rfecv = RFECV(
+        estimator=estimator,
+        step=1,
+        cv=cv,
+        scoring='roc_auc',
+        n_jobs=-1
+    )
+    rfecv.fit(X_train, y_train)
+    selected_features = X_train.columns[rfecv.support_]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(
+        range(1, len(rfecv.cv_results_['mean_test_score']) + 1),
+        rfecv.cv_results_['mean_test_score'],
+        marker='o'
+    )
+    plt.xlabel("Number of Selected Features")
+    plt.ylabel("Cross-Validation Score (AUC)")
+    plt.title("RFECV Feature Selection")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    print(f"\n🎯 RFECV로 선택된 변수 {len(selected_features)}개:")
+    print(selected_features)
+
+    return selected_features
 
 # 모델 정의
 def get_models():
@@ -139,24 +172,25 @@ def compute_metrics(y_true, y_pred, y_proba):
     tn, fp, fn, tp = cm.ravel()
 
     return {
-        'Accuracy': (tn + tp) / (tn + fp + fn + tp),    # 전체 중 맞춘 비율
-        'Precision': precision_score(y_true, y_pred),   # 1 이라고 예측한 것 중 진짜 1의 비율
-        'Recall': recall_score(y_true, y_pred),         # 실제 1 중에서 1 이라고 맞춘 비율
-        'F1': f1_score(y_true, y_pred),
-        'Balanced_Accuracy': balanced_accuracy_score(y_true, y_pred),
-        'Specificity': tn / (tn + fp),
-        'Sensitivity': tp / (tp + fn),
-        'MCC': matthews_corrcoef(y_true, y_pred),
-        'AUC': roc_auc_score(y_true, y_proba) if y_proba is not None else None
+        'Accuracy': (tn + tp) / (tn + fp + fn + tp), # 전체 샘플 중에서 정답을 맞춘 비율
+        'Precision': precision_score(y_true, y_pred), # 1 이라고 예측한 것 중에 실제 1인 비율
+        'Recall': recall_score(y_true, y_pred), # 실제 1인 것 중에서 모델이 1 이라고 맞춘 비율
+        'F1': f1_score(y_true, y_pred), # Precision과 Recall의 조화 평균
+        'Balanced_Accuracy': balanced_accuracy_score(y_true, y_pred), # 클래스 불균형이 심할 떄 적합한 정확도 측정 지표
+        'Specificity': tn / (tn + fp), # 0 이라고 예측한 것 중에 실제 0인 비율
+        'Sensitivity': tp / (tp + fn), # = Recall
+        'MCC': matthews_corrcoef(y_true, y_pred), # 균형 잡힌 분류 성능 평가
+        'AUC': roc_auc_score(y_true, y_proba) if y_proba is not None else None # 모델이 무작위보다 얼마나 나은 분류자인지 측정
     }
 
-# 시각화 함수들
+# Confusion Matrix
 def plot_confusion_matrix(y_true, y_pred, model_name):
     ConfusionMatrixDisplay.from_predictions(y_true, y_pred, display_labels=['Beginner', 'Trained'], cmap='Blues')
     plt.title(f'Confusion Matrix - {model_name}')
     plt.tight_layout()
     plt.show()
 
+# Roc Curve
 def plot_roc_curve(y_true, y_proba, model_name):
     fpr, tpr, _ = roc_curve(y_true, y_proba)
     plt.plot(fpr, tpr, label=f'AUC = {auc(fpr, tpr):.2f}')
@@ -169,6 +203,7 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.tight_layout()
     plt.show()
 
+# Combined Roc Curve
 def plot_combined_roc_curves(results, X_test, y_test):
     colors = ['pink', 'red', 'orange', 'green', 'blue', 'navy', 'purple', 'brown']
     plt.figure(figsize=(10, 6))
@@ -206,6 +241,7 @@ def plot_combined_roc_curves(results, X_test, y_test):
     plt.tight_layout()
     plt.show()
 
+# Learning Curve
 def plot_learning_curve(estimator, X, y, model_name):
     sizes, train_scores, val_scores = learning_curve(estimator, X, y, cv=5, scoring='f1')
     train_mean = train_scores.mean(axis=1)
@@ -224,6 +260,7 @@ def plot_learning_curve(estimator, X, y, model_name):
     plt.tight_layout()
     plt.show()
 
+# Feature Importance + Permutation Importance
 def plot_feature_importance(model, X, y, feature_names, model_name):
     if hasattr(model, 'feature_importances_'):
         imp = model.feature_importances_
@@ -244,6 +281,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
     plt.tight_layout()
     plt.show()
 
+# Decision Tree
 def plot_decision_tree(model, feature_names, class_names=['Beginner', 'Trained'], model_name='Decision Tree'):
     if not hasattr(model, 'tree_'):
         print(f"❌ {model_name}는 결정트리 기반 모델이 아닙니다.")
@@ -264,24 +302,20 @@ def plot_decision_tree(model, feature_names, class_names=['Beginner', 'Trained']
 
     print(f"Max Depth of {model_name}: {model.get_depth()}")
 
+# 시각화
 def visualize_model_results(model, model_name, X_train, y_train, X_test, y_test, selected_features):
     y_pred = model.predict(X_test)
     y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
 
-    # Confusion Matrix
     plot_confusion_matrix(y_test, y_pred, model_name)
 
-    # ROC Curve (개별)
     if y_proba is not None:
         plot_roc_curve(y_test, y_proba, model_name)
 
-    # Learning Curve
     plot_learning_curve(model, X_train, y_train, model_name)
 
-    # Feature Importance
     plot_feature_importance(model, X_train, y_train, selected_features, model_name)
 
-    # Decision Tree 시각화 (해당 모델일 경우만)
     if model_name == 'Decision Tree':
         plot_decision_tree(model, selected_features, class_names=['Beginner', 'Trained'], model_name=model_name)
 
@@ -311,14 +345,11 @@ if __name__ == '__main__':
     df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols = data_processing()
 
     # 2. 랜덤포레스트로 Top 변수 추천
-    top_features_all = select_top_features_by_rf(X_train_raw, y_train, feature_cols, top_n=20)
+    top_features = select_features_by_rf(X_train_raw, y_train, feature_cols, top_n=50)
 
-    # 3. 변수 선택 (터미널 입력)
-    input_str = input("\n📥 사용할 변수명을 쉼표(,)로 입력하세요:\n")
-    selected_features = [var.strip() for var in input_str.split(',') if var.strip()]
-    for var in selected_features:
-        if var not in X_train_raw.columns:
-            raise ValueError(f"❌ 변수 '{var}'는 데이터에 존재하지 않습니다.")
+    # 3. RFECV로 주요 변수 선택
+    X_train_top = X_train_raw[top_features]
+    selected_features = select_features_by_rfecv(X_train_top, y_train)
 
     # 4. 표준화 (StandardScaler)
     scaler = StandardScaler()
