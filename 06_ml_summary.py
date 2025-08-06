@@ -16,13 +16,14 @@ from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKF
 from sklearn.feature_selection import RFECV
 from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from imblearn.over_sampling import SMOTE
 
 # 설정
 RANDOM_STATE = 42
 
 # 데이터 전처리
 def data_processing():
-    csv_files = glob.glob('./features_xlsx_일대일/*.xlsx')
+    csv_files = glob.glob('./features_xlsx/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
     df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
@@ -32,6 +33,9 @@ def data_processing():
     feature_cols = df_all.select_dtypes(include=['float64', 'int64']).columns.drop('label')
     raw_features = df_all[feature_cols]
     X_train_raw, X_test_raw, y_train, y_test = train_test_split(raw_features, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE)
+
+    smote = SMOTE(random_state=RANDOM_STATE)
+    X_train_raw, y_train = smote.fit_resample(X_train_raw, y_train)
 
     return df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols
 
@@ -331,7 +335,7 @@ def run_model(name, model_info, X_train, X_test, y_train, y_test):
     print(confusion_matrix(y_test, y_pred))
     print(classification_report(y_test, y_pred))
     print(f"Best Params: {grid.best_params_}")
-    print(f"Best F1 (CV): {grid.best_score_:.4f}")
+    print(f"Best F1 (CV): {grid.best_score_:.5f}")
 
     return {
         'Model': name,
