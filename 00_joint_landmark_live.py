@@ -2,7 +2,7 @@ import cv2
 import mediapipe as mp
 
 # 설정
-VIDEO_PATH = "./videos_all/01_박민희_0_230322.mov"
+VIDEO_PATH = "./videos_all/04__1_250804.mov"
 
 # 영상 열기
 cap = cv2.VideoCapture(VIDEO_PATH)

@@ -16,24 +16,26 @@ from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKF
 from sklearn.feature_selection import RFECV
 from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from imblearn.over_sampling import SMOTE
 
 # 설정
 RANDOM_STATE = 42
 
 # 데이터 전처리
 def data_processing():
-    csv_files = glob.glob('./features_xlsx/*.xlsx')
+    csv_files = glob.glob('./features_xlsx_125/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)
+    df_all = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
     y_all = LabelEncoder().fit_transform(df_all['label'])
     print(f"라벨 분포 - 0: {(y_all == 0).sum()}개 / 1: {(y_all == 1).sum()}개")
 
     feature_cols = df_all.select_dtypes(include=['float64', 'int64']).columns.drop('label')
     raw_features = df_all[feature_cols]
-    X_train_raw, X_test_raw, y_train, y_test = train_test_split(
-        raw_features, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE
-    )
+    X_train_raw, X_test_raw, y_train, y_test = train_test_split(raw_features, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE)
+
+    smote = SMOTE(sampling_strategy='auto', random_state=RANDOM_STATE)
+    X_train_raw, y_train = smote.fit_resample(X_train_raw, y_train)
 
     return df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols
 
@@ -41,7 +43,7 @@ def data_processing():
 def select_features_by_rf(X_train, y_train, feature_cols, top_n=50):
     rf = RandomForestClassifier(
         n_estimators=500,
-        max_depth=7,
+        max_depth=None,
         max_features='sqrt',
         class_weight=None,
         random_state=RANDOM_STATE,
@@ -67,29 +69,33 @@ def select_features_by_rf(X_train, y_train, feature_cols, top_n=50):
 
 # RFECV 변수 선택
 def select_features_by_rfecv(X_train, y_train):
-    estimator = XGBClassifier(
-        n_estimators=300,
-        max_depth=5,
-        earning_rate=0.1,
-        use_label_encoder=False,
-        eval_metric='logloss',
-        random_state=RANDOM_STATE
-    )
+    estimator = LogisticRegression(max_iter=1000, solver='liblinear', random_state=RANDOM_STATE)
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-    rfecv = RFECV(estimator=estimator, step=1, cv=cv, scoring='roc_auc', n_jobs=-1)
+
+    rfecv = RFECV(
+        estimator=estimator,
+        step=1,
+        cv=cv,
+        scoring='roc_auc',
+        n_jobs=-1
+    )
     rfecv.fit(X_train, y_train)
     selected_features = X_train.columns[rfecv.support_]
 
     plt.figure(figsize=(10, 6))
-    plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), rfecv.cv_results_['mean_test_score'], marker='o')
+    plt.plot(
+        range(1, len(rfecv.cv_results_['mean_test_score']) + 1),
+        rfecv.cv_results_['mean_test_score'],
+        marker='o'
+    )
     plt.xlabel("Number of Selected Features")
     plt.ylabel("Cross-Validation Score (AUC)")
-    plt.title("RFECV with XGBoost")
+    plt.title("RFECV Feature Selection")
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
-    print(f"\n🎯XGBoost RFECV로 선택된 변수 {len(selected_features)}개:")
+    print(f"\n🎯 RFECV로 선택된 변수 {len(selected_features)}개:")
     print(selected_features)
 
     return selected_features
