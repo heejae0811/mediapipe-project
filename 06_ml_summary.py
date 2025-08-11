@@ -22,7 +22,7 @@ RANDOM_STATE = 42
 
 # 데이터 전처리
 def data_processing():
-    csv_files = glob.glob('./features_xlsx/*.xlsx')
+    csv_files = glob.glob('./features_xlsx_복사본/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
     df_all = pd.concat([pd.read_excel(file, sheet_name=2) for file in csv_files], ignore_index=True)

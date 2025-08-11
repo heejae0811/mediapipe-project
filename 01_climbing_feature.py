@@ -5,7 +5,7 @@ import mediapipe as mp
 
 # 설정
 LABEL = 1
-VIDEO_PATH = './videos/60__1_250720.mov'
+VIDEO_PATH = './videos_all/34__1_250220.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1
