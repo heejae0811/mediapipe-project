@@ -4,8 +4,8 @@ import pandas as pd
 import mediapipe as mp
 
 # 설정
-LABEL = 1
-VIDEO_PATH = './videos_all/34__1_250220.mov'
+LABEL = 0
+VIDEO_PATH = './videos_all/02__0_230510.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1
@@ -74,10 +74,12 @@ def compute_body_size(trajectory, threshold=0.5):
 speed_data = {'id': FILE_ID, 'label': LABEL}
 accel_data = {'id': FILE_ID, 'label': LABEL}
 jerk_data = {'id': FILE_ID, 'label': LABEL}
-vis_data = {'id': FILE_ID, 'label': LABEL}
+distance_data = {'id': FILE_ID, 'label': LABEL}
+visibility_data = {'id': FILE_ID, 'label': LABEL}
 data_map = {'speed': speed_data, 'accel': accel_data, 'jerk': jerk_data}
 
-# 정규화
+# 정규화 기준값
+total_time = frame_idx / fps
 body_size = compute_body_size(trajectory)
 
 # 관절별 분석
@@ -86,11 +88,12 @@ for i in range(33):
     y = np.array(trajectory[i]['y'])
     vis_array = np.array(trajectory[i]['visibility'])
 
-    # 속력, 가속도, 저크 계산
+    # 속력, 가속도, 저크, 이동거리 계산
     xy = np.stack([x, y], axis=1)
     s = np.linalg.norm(np.diff(xy, axis=0), axis=1) * fps # 이동 거리 × fps
     a = np.diff(s) * fps # speed 차이 × fps
     j = np.diff(a) * fps # acceleration 차이 × fps
+    d = np.sum(np.linalg.norm(np.diff(xy, axis=0), axis=1))  # 총 이동 거리
 
     def compute_stats(arr):
         if len(arr) > 3:
@@ -104,6 +107,7 @@ for i in range(33):
         'jerk': compute_stats(j)
     }
 
+    # Speed / Accel / Jerk 저장
     for name in ['speed', 'accel', 'jerk']:
         raw = stats[name]
         body_norm = [val / body_size for val in raw]
@@ -112,7 +116,12 @@ for i in range(33):
             data_map[name][f'landmark{i}_{name}_{k}_raw'] = raw[stat_name]
             data_map[name][f'landmark{i}_{name}_{k}_bodyNorm'] = body_norm[stat_name]
 
-    vis_data[f'landmark{i}_visibility_mean'] = np.mean(vis_array) if len(vis_array) > 0 else np.nan
+    # Distance 저장
+    distance_data[f'landmark{i}_totalDistance_raw'] = d
+    distance_data[f'landmark{i}_totalDistance_timeBodyNorm'] = d / (total_time * body_size)
+
+    # Visibility 평균 저장
+    visibility_data[f'landmark{i}_visibility_mean'] = np.mean(vis_array) if len(vis_array) > 0 else np.nan
 
 # 엑셀 저장
 os.makedirs(os.path.dirname(OUTPUT_XLSX), exist_ok=True)
@@ -120,6 +129,7 @@ with pd.ExcelWriter(OUTPUT_XLSX, engine='openpyxl') as writer:
     pd.DataFrame([speed_data]).to_excel(writer, index=False, sheet_name='Speed')
     pd.DataFrame([accel_data]).to_excel(writer, index=False, sheet_name='Acceleration')
     pd.DataFrame([jerk_data]).to_excel(writer, index=False, sheet_name='Jerk')
-    pd.DataFrame([vis_data]).to_excel(writer, index=False, sheet_name='Visibility')
+    pd.DataFrame([distance_data]).to_excel(writer, index=False, sheet_name='Distance')
+    pd.DataFrame([visibility_data]).to_excel(writer, index=False, sheet_name='Visibility')
 
 print(f"✅ 엑셀 저장 완료: {OUTPUT_XLSX}")
