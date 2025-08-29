@@ -51,24 +51,18 @@ def compute_body_size(trajectory, threshold=0.5):
         y2 = np.array(trajectory[idx2]['y'])
         v2 = np.array(trajectory[idx2]['visibility'])
 
-        valid_mask = (v1 > threshold) & (v2 > threshold)
-        if np.sum(valid_mask) > 0:
-            dist = np.sqrt((x1[valid_mask] - x2[valid_mask])**2 + (y1[valid_mask] - y2[valid_mask])**2)
-            return np.mean(dist)
-        else:
-            return None
+        valid = (v1 > threshold) & (v2 > threshold)
+        if np.any(valid):
+            return np.mean(np.sqrt((x1[valid] - x2[valid])**2 + (y1[valid] - y2[valid])**2))
+        return None
 
     left = get_valid_distance(11, 23)   # 왼쪽 어깨-왼쪽 엉덩이
     right = get_valid_distance(12, 24)  # 오른쪽 어깨-오른쪽 엉덩이
 
-    if left is not None and right is not None:
-        return (left + right) / 2
-    elif left is not None:
-        return left
-    elif right is not None:
-        return right
-    else:
-        return 1.0
+    if left and right: return (left + right) / 2
+    if left: return left
+    if right: return right
+    return 1.0
 
 # 결과 저장용 딕셔너리
 speed_data = {'id': FILE_ID, 'label': LABEL}
@@ -83,45 +77,48 @@ total_time = frame_idx / fps
 body_size = compute_body_size(trajectory)
 
 # 관절별 분석
+def compute_stats(arr):
+    if len(arr) > 3:
+        return {
+            'min': np.min(arr),
+            'max': np.max(arr),
+            'mean': np.mean(arr),
+            'median': np.median(arr),
+            'std': np.std(arr)
+        }
+    else:
+        return {k: np.nan for k in ['min', 'max', 'mean', 'median', 'std']}
+
 for i in range(33):
     x = np.array(trajectory[i]['x'])
     y = np.array(trajectory[i]['y'])
-    vis_array = np.array(trajectory[i]['visibility'])
+    vis = np.array(trajectory[i]['visibility'])
 
     # 속력, 가속도, 저크, 이동거리 계산
     xy = np.stack([x, y], axis=1)
-    s = np.linalg.norm(np.diff(xy, axis=0), axis=1) * fps # 이동 거리 × fps
-    a = np.diff(s) * fps # speed 차이 × fps
-    j = np.diff(a) * fps # acceleration 차이 × fps
-    d = np.sum(np.linalg.norm(np.diff(xy, axis=0), axis=1))  # 총 이동 거리
-
-    def compute_stats(arr):
-        if len(arr) > 3:
-            return [np.min(arr), np.max(arr), np.mean(arr), np.median(arr), np.std(arr)]
-        else:
-            return [np.nan]*5
+    speed = np.linalg.norm(np.diff(xy, axis=0), axis=1) * fps # 이동 거리 × fps
+    accel = np.diff(speed) * fps # speed 차이 × fps
+    jerk = np.diff(accel) * fps # acceleration 차이 × fps
+    total_dist = np.sum(np.linalg.norm(np.diff(xy, axis=0), axis=1)) # 총 이동 거리
 
     stats = {
-        'speed': compute_stats(s),
-        'accel': compute_stats(a),
-        'jerk': compute_stats(j)
+        'speed': compute_stats(speed),
+        'accel': compute_stats(accel),
+        'jerk': compute_stats(jerk)
     }
 
-    # Speed / Accel / Jerk 저장
-    for name in ['speed', 'accel', 'jerk']:
-        raw = stats[name]
-        body_norm = [val / body_size for val in raw]
-
-        for k, stat_name in zip(['min', 'max', 'mean', 'median', 'std'], range(5)):
-            data_map[name][f'landmark{i}_{name}_{k}_raw'] = raw[stat_name]
-            data_map[name][f'landmark{i}_{name}_{k}_bodyNorm'] = body_norm[stat_name]
+    # Speed, Accel, Jerk 저장
+    for feature_name in ['speed', 'accel', 'jerk']:
+        for stat_name, val in stats[feature_name].items():
+            data_map[feature_name][f'landmark{i}_{feature_name}_{stat_name}_raw'] = val
+            data_map[feature_name][f'landmark{i}_{feature_name}_{stat_name}_bodyNorm'] = val / body_size
 
     # Distance 저장
-    distance_data[f'landmark{i}_totalDistance_raw'] = d
-    distance_data[f'landmark{i}_totalDistance_timeBodyNorm'] = d / (total_time * body_size)
+    distance_data[f'landmark{i}_totalDistance_raw'] = total_dist
+    distance_data[f'landmark{i}_totalDistance_timeBodyNorm'] = total_dist / (total_time * body_size)
 
     # Visibility 평균 저장
-    visibility_data[f'landmark{i}_visibility_mean'] = np.mean(vis_array) if len(vis_array) > 0 else np.nan
+    visibility_data[f'landmark{i}_visibility_mean'] = np.mean(vis) if len(vis) > 0 else np.nan
 
 # 엑셀 저장
 os.makedirs(os.path.dirname(OUTPUT_XLSX), exist_ok=True)
