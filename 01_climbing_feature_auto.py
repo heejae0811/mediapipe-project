@@ -101,19 +101,22 @@ def process_video(VIDEO_PATH, LABEL=0):
         x = np.array(trajectory[i]['x'])
         y = np.array(trajectory[i]['y'])
 
-        positions = np.stack([x, y], axis=1)
-        distances = np.linalg.norm(np.diff(positions, axis=0), axis=1)
-        total_distance = np.sum(distances)
+        dx = np.sum(np.abs(np.diff(x)))
+        dy = np.sum(np.abs(np.diff(y)))
+        dxy = np.sum(np.linalg.norm(np.diff(np.stack([x, y], axis=1), axis=0), axis=1))
 
         sx, ax, jx = compute_derivatives(x, fps)
         sy, ay, jy = compute_derivatives(y, fps)
-        sxy, axy, jxy = compute_derivatives(distances, fps)
+        sxy, axy, jxy = compute_derivatives(np.linalg.norm(np.diff(np.stack([x, y], axis=1), axis=0), axis=1), fps)
 
         distance_rows.append({
             'id': FILE_ID, 'label': LABEL, 'landmark': i,
-            'distance_raw': total_distance,
-            'distance_bodyNorm': total_distance / body_size,
-            'distance_timeBodyNorm': total_distance / (total_time * body_size)
+            'distance_x_raw': dx,
+            'distance_x_timeBodyNorm': dx / (total_time * body_size),
+            'distance_y_raw': dy,
+            'distance_y_timeBodyNorm': dy / (total_time * body_size),
+            'distance_xy_raw': dxy,
+            'distance_xy_timeBodyNorm': dxy / (total_time * body_size)
         })
 
         axis_data = {

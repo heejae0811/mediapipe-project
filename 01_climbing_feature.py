@@ -5,7 +5,7 @@ import mediapipe as mp
 
 # 설정
 LABEL = 0
-VIDEO_PATH = './videos_all/02__0_230510.mov'
+VIDEO_PATH = './videos/71_오윤택_0_220328.mov'
 FILE_ID = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_XLSX = f'./features_xlsx/{FILE_ID}.xlsx'
 FRAME_INTERVAL = 1
@@ -18,7 +18,6 @@ cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
     raise IOError(f"Cannot open video: {VIDEO_PATH}")
 
-# 관절 인식률
 fps = cap.get(cv2.CAP_PROP_FPS)
 trajectory = {i: {'x': [], 'y': [], 'visibility': []} for i in range(33)}
 frame_idx = 0
@@ -40,7 +39,7 @@ while cap.isOpened():
 cap.release()
 pose.close()
 
-# 신체 크기 정규화
+# 신체 크기 정규화 기준 계산
 def compute_body_size(trajectory, threshold=0.5):
     def get_valid_distance(idx1, idx2):
         x1 = np.array(trajectory[idx1]['x'])
@@ -56,77 +55,133 @@ def compute_body_size(trajectory, threshold=0.5):
             return np.mean(np.sqrt((x1[valid] - x2[valid])**2 + (y1[valid] - y2[valid])**2))
         return None
 
-    left = get_valid_distance(11, 23)   # 왼쪽 어깨-왼쪽 엉덩이
-    right = get_valid_distance(12, 24)  # 오른쪽 어깨-오른쪽 엉덩이
+    left = get_valid_distance(11, 23)
+    right = get_valid_distance(12, 24)
 
     if left and right: return (left + right) / 2
     if left: return left
     if right: return right
     return 1.0
 
-# 결과 저장용 딕셔너리
-speed_data = {'id': FILE_ID, 'label': LABEL}
-accel_data = {'id': FILE_ID, 'label': LABEL}
-jerk_data = {'id': FILE_ID, 'label': LABEL}
-distance_data = {'id': FILE_ID, 'label': LABEL}
-visibility_data = {'id': FILE_ID, 'label': LABEL}
-data_map = {'speed': speed_data, 'accel': accel_data, 'jerk': jerk_data}
-
-# 정규화 기준값
-total_time = frame_idx / fps
-body_size = compute_body_size(trajectory)
-
-# 관절별 분석
+# 통계 함수
 def compute_stats(arr):
     if len(arr) > 3:
         return {
-            'min': np.min(arr),
-            'max': np.max(arr),
             'mean': np.mean(arr),
-            'median': np.median(arr),
+            'max': np.max(arr),
             'std': np.std(arr)
         }
     else:
-        return {k: np.nan for k in ['min', 'max', 'mean', 'median', 'std']}
+        return {k: np.nan for k in ['mean', 'max', 'std']}
 
+# 파생량 계산
+def compute_derivatives(position_series):
+    velocity = np.diff(position_series) * fps
+    acceleration = np.diff(velocity) * fps
+    jerk = np.diff(acceleration) * fps
+    return velocity, acceleration, jerk
+
+# 정규화 기준값
+body_size = compute_body_size(trajectory)
+
+# 결과 저장 리스트
+distance_rows = []
+speed_rows = []
+acceleration_rows = []
+jerk_rows = []
+
+# 관절별 계산
 for i in range(33):
     x = np.array(trajectory[i]['x'])
     y = np.array(trajectory[i]['y'])
-    vis = np.array(trajectory[i]['visibility'])
 
-    # 속력, 가속도, 저크, 이동거리 계산
-    xy = np.stack([x, y], axis=1)
-    speed = np.linalg.norm(np.diff(xy, axis=0), axis=1) * fps # 이동 거리 × fps
-    accel = np.diff(speed) * fps # speed 차이 × fps
-    jerk = np.diff(accel) * fps # acceleration 차이 × fps
-    total_dist = np.sum(np.linalg.norm(np.diff(xy, axis=0), axis=1)) # 총 이동 거리
+    vx, ax, jx = compute_derivatives(x)
+    vy, ay, jy = compute_derivatives(y)
+    vxy, axy, jxy = compute_derivatives(x + y)
 
-    stats = {
-        'speed': compute_stats(speed),
-        'accel': compute_stats(accel),
-        'jerk': compute_stats(jerk)
+    # Distance
+    dx = np.sum(np.abs(np.diff(x)))
+    dy = np.sum(np.abs(np.diff(y)))
+    dxy = np.sum(np.abs(np.diff(x + y)))
+
+    distance_rows.append({
+        'id': FILE_ID, 'label': LABEL, 'landmark': i,
+        'distance_x_raw': dx,
+        'distance_y_raw': dy,
+        'distance_xy_raw': dxy,
+        'distance_x_bodyNorm': dx / body_size,
+        'distance_y_bodyNorm': dy / body_size,
+        'distance_xy_bodyNorm': dxy / body_size
+    })
+
+    axis_data = {
+        'x': (vx, ax, jx),
+        'y': (vy, ay, jy),
+        'xy': (vxy, axy, jxy)
     }
 
-    # Speed, Accel, Jerk 저장
-    for feature_name in ['speed', 'accel', 'jerk']:
-        for stat_name, val in stats[feature_name].items():
-            data_map[feature_name][f'landmark{i}_{feature_name}_{stat_name}_raw'] = val
-            data_map[feature_name][f'landmark{i}_{feature_name}_{stat_name}_bodyNorm'] = val / body_size
+    for axis_name, (vel, acc, jrk) in axis_data.items():
+        vel_stats = compute_stats(vel)
+        acc_stats = compute_stats(acc)
+        jrk_stats = compute_stats(jrk)
 
-    # Distance 저장
-    distance_data[f'landmark{i}_totalDistance_raw'] = total_dist
-    distance_data[f'landmark{i}_totalDistance_timeBodyNorm'] = total_dist / (total_time * body_size)
+        speed_rows.append({
+            'id': FILE_ID, 'label': LABEL, 'landmark': i,
+            **{f'speed_{axis_name}_{k}_raw': v for k, v in vel_stats.items()},
+            **{f'speed_{axis_name}_{k}_bodyNorm': v / body_size for k, v in vel_stats.items()}
+        })
 
-    # Visibility 평균 저장
-    visibility_data[f'landmark{i}_visibility_mean'] = np.mean(vis) if len(vis) > 0 else np.nan
+        acceleration_rows.append({
+            'id': FILE_ID, 'label': LABEL, 'landmark': i,
+            **{f'acceleration_{axis_name}_{k}_raw': v for k, v in acc_stats.items()},
+            **{f'acceleration_{axis_name}_{k}_bodyNorm': v / body_size for k, v in acc_stats.items()}
+        })
+
+        jerk_rows.append({
+            'id': FILE_ID, 'label': LABEL, 'landmark': i,
+            **{f'jerk_{axis_name}_{k}_raw': v for k, v in jrk_stats.items()},
+            **{f'jerk_{axis_name}_{k}_bodyNorm': v / body_size for k, v in jrk_stats.items()}
+        })
+
+# 행 → 열 변환
+def flatten_rows(rows):
+    flat = {}
+    for row in rows:
+        landmark = row['landmark']
+        for k, v in row.items():
+            if k not in ['id', 'label', 'landmark']:
+                flat[f'landmark{landmark}_{k}'] = v
+    return flat
+
+flat_speed = flatten_rows(speed_rows)
+flat_accel = flatten_rows(acceleration_rows)
+flat_jerk = flatten_rows(jerk_rows)
+flat_distance = flatten_rows(distance_rows)
+
+# 전체 통합
+merged_flat = {
+    'id': FILE_ID,
+    'label': LABEL,
+    **flat_speed,
+    **flat_accel,
+    **flat_jerk,
+    **flat_distance
+}
+
+# DataFrames (모두 id, label 포함)
+df_speed = pd.DataFrame([{'id': FILE_ID, 'label': LABEL, **flat_speed}])
+df_accel = pd.DataFrame([{'id': FILE_ID, 'label': LABEL, **flat_accel}])
+df_jerk = pd.DataFrame([{'id': FILE_ID, 'label': LABEL, **flat_jerk}])
+df_distance = pd.DataFrame([{'id': FILE_ID, 'label': LABEL, **flat_distance}])
+df_flat = pd.DataFrame([merged_flat])
 
 # 엑셀 저장
 os.makedirs(os.path.dirname(OUTPUT_XLSX), exist_ok=True)
 with pd.ExcelWriter(OUTPUT_XLSX, engine='openpyxl') as writer:
-    pd.DataFrame([speed_data]).to_excel(writer, index=False, sheet_name='Speed')
-    pd.DataFrame([accel_data]).to_excel(writer, index=False, sheet_name='Acceleration')
-    pd.DataFrame([jerk_data]).to_excel(writer, index=False, sheet_name='Jerk')
-    pd.DataFrame([distance_data]).to_excel(writer, index=False, sheet_name='Distance')
-    pd.DataFrame([visibility_data]).to_excel(writer, index=False, sheet_name='Visibility')
+    df_speed.to_excel(writer, index=False, sheet_name='Speed')
+    df_accel.to_excel(writer, index=False, sheet_name='Acceleration')
+    df_jerk.to_excel(writer, index=False, sheet_name='Jerk')
+    df_distance.to_excel(writer, index=False, sheet_name='Distance')
+    df_flat.to_excel(writer, index=False, sheet_name='Flattened')
 
-print(f"✅ 엑셀 저장 완료: {OUTPUT_XLSX}")
+print(f"✅ 엑셀 저장 완료 (시트 5개 포함): {OUTPUT_XLSX}")
