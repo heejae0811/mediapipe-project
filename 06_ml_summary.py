@@ -94,19 +94,19 @@ def run_rfecv(X, y):
         n_jobs=-1,
         verbosity=-1
     )
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     rfecv = RFECV(estimator=estimator, step=3, cv=cv, scoring='roc_auc', n_jobs=-1)
     rfecv.fit(X, y)
 
     selected_features = X.columns[rfecv.support_]
-    print(f"\n🎯LGBMClassifier RFECV로 선택된 변수 {len(selected_features)}개:")
+    print(f"\n🎯LightGBM RFECV로 선택된 변수 {len(selected_features)}개:")
     print(selected_features)
 
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), rfecv.cv_results_['mean_test_score'], marker='o')
     plt.xlabel("Number of Selected Features")
     plt.ylabel("Cross-Validation Score (AUC)")
-    plt.title("RFECV with XGBoost")
+    plt.title("RFECV with LightGBM")
     plt.grid(True)
     plt.tight_layout()
     plt.show()
@@ -218,7 +218,7 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.show()
 
 def plot_combined_roc_curves(results, X_test, y_test):
-    colors = ['red', 'orange', 'green', 'blue', 'purple' 'brown']
+    colors = ['red', 'orange', 'green', 'blue', 'purple', 'brown']
     plt.figure(figsize=(10, 6))
 
     for result, color in zip(results, colors):
@@ -296,14 +296,14 @@ def plot_decision_tree(model, feature_names):
         plt.tight_layout()
         plt.show()
 
-    print(f"Max Depth of {model_name}: {model.get_depth()}")
+    print(f"Max Depth of Decision Tree: {model.get_depth()}")
 
 
 # ========================================
 # Run Model
 # ========================================
 def run_model(model_name, X_train, X_test, y_train, y_test, selected_features, n_trials=5):
-    sampler = optuna.samplers.RandomSampler()
+    sampler = optuna.samplers.RandomSampler(seed=RANDOM_STATE)
     study = optuna.create_study(direction="maximize", sampler=sampler)
     study.optimize(lambda trial: objective(trial, model_name, X_train, y_train, selected_features), n_trials=n_trials)
     best_params = study.best_params
