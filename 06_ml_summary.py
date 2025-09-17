@@ -30,11 +30,7 @@ def data_processing():
     csv_files = glob.glob('./features_xlsx_1/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
-    df_all = pd.concat(
-        [pd.read_excel(file, sheet_name=4) for file in csv_files],
-        ignore_index=True
-    )
-
+    df_all = pd.concat([pd.read_excel(file, sheet_name=4) for file in csv_files], ignore_index=True)
     y_all = LabelEncoder().fit_transform(df_all['label'])
     print(f"라벨 분포 - 0: {(y_all == 0).sum()}개 / 1: {(y_all == 1).sum()}개")
 
@@ -42,8 +38,7 @@ def data_processing():
     raw_features = df_all[feature_cols]
 
     X_train_raw, X_test_raw, y_train, y_test = train_test_split(
-        raw_features, y_all,
-        test_size=0.2, stratify=y_all, random_state=RANDOM_STATE
+        raw_features, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE
     )
 
     return df_all, X_train_raw, X_test_raw, y_train, y_test, feature_cols
@@ -54,7 +49,6 @@ def data_processing():
 def find_highly_correlation(X, threshold=0.9):
     corr_matrix = X.corr().abs()
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-
     correlated_pairs = [
         (col1, col2, upper.loc[col1, col2])
         for col1 in upper.columns
@@ -68,7 +62,11 @@ def find_highly_correlation(X, threshold=0.9):
 # Feature Selection: drop low importance
 # ========================================
 def drop_low_importance(X, y, correlated_pairs):
-    rf = RandomForestClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1)
+    rf = RandomForestClassifier(
+        n_estimators=200,
+        random_state=RANDOM_STATE,
+        n_jobs=-1
+    )
     rf.fit(X, y)
 
     importances = pd.Series(rf.feature_importances_, index=X.columns)
@@ -97,9 +95,21 @@ def run_rfecv(X, y):
         verbosity=-1
     )
     cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
-
     rfecv = RFECV(estimator=estimator, step=3, cv=cv, scoring='roc_auc', n_jobs=-1)
     rfecv.fit(X, y)
+
+    selected_features = X.columns[rfecv.support_]
+    print(f"\n🎯LGBMClassifier RFECV로 선택된 변수 {len(selected_features)}개:")
+    print(selected_features)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), rfecv.cv_results_['mean_test_score'], marker='o')
+    plt.xlabel("Number of Selected Features")
+    plt.ylabel("Cross-Validation Score (AUC)")
+    plt.title("RFECV with XGBoost")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
     return X.columns[rfecv.support_]
 
@@ -131,8 +141,7 @@ def objective(trial, model_name, X, y, selected_features):
 
     if model_name == 'Logistic Regression':
         params = {"C": trial.suggest_float("C", 1e-3, 10, log=True)}
-        model = LogisticRegression(max_iter=500, random_state=RANDOM_STATE,
-                                   penalty="l2", solver="liblinear", **params)
+        model = LogisticRegression(max_iter=500, random_state=RANDOM_STATE, penalty="l2", solver="liblinear", **params)
 
     elif model_name == 'Decision Tree':
         params = {"max_depth": trial.suggest_int("max_depth", 2, 6)}
@@ -151,8 +160,7 @@ def objective(trial, model_name, X, y, selected_features):
             "max_depth": trial.suggest_int("max_depth", 2, 6),
             "learning_rate": trial.suggest_float("learning_rate", 0.05, 0.2)
         }
-        model = XGBClassifier(random_state=RANDOM_STATE, eval_metric="logloss",
-                              n_jobs=-1, **params)
+        model = XGBClassifier(random_state=RANDOM_STATE, eval_metric="logloss", n_jobs=-1, **params)
 
     elif model_name == 'LightGBM':
         params = {
@@ -164,8 +172,7 @@ def objective(trial, model_name, X, y, selected_features):
 
     elif model_name == 'Support Vector Machine':
         params = {"C": trial.suggest_float("C", 0.1, 5, log=True)}
-        model = SVC(probability=True, random_state=RANDOM_STATE,
-                    kernel="rbf", gamma="scale", **params)
+        model = SVC(probability=True, random_state=RANDOM_STATE, kernel="rbf", gamma="scale", **params)
 
     else:
         raise ValueError(f"지원하지 않는 모델: {model_name}")
@@ -186,33 +193,37 @@ def objective(trial, model_name, X, y, selected_features):
     return np.mean(scores)
 
 # ========================================
-# Visualization (사용자 원본 그대로 유지)
+# Visualization
 # ========================================
 def plot_confusion_matrix(y_true, y_pred, model_name):
     ConfusionMatrixDisplay.from_predictions(
         y_true, y_pred, display_labels=['Beginner', 'Trained'], cmap='Blues'
     )
+
     plt.title(f'Confusion Matrix - {model_name}')
     plt.tight_layout()
     plt.show()
 
 def plot_roc_curve(y_true, y_proba, model_name):
     fpr, tpr, _ = roc_curve(y_true, y_proba)
+
     plt.plot(fpr, tpr, label=f'AUC = {auc(fpr, tpr):.2f}')
     plt.plot([0, 1], [0, 1], 'k--')
     plt.title(f'ROC Curve - {model_name}')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.grid(True, axis='both', linestyle='-', linewidth=0.4, color='gray', alpha=0.4)
     plt.legend(loc='lower right')
+    plt.tight_layout()
     plt.show()
 
 def plot_combined_roc_curves(results, X_test, y_test):
-    colors = ['pink', 'red', 'orange', 'green', 'blue', 'navy', 'purple', 'brown']
+    colors = ['red', 'orange', 'green', 'blue', 'purple' 'brown']
     plt.figure(figsize=(10, 6))
 
     for result, color in zip(results, colors):
         name, model = result['Model'], result['Best Model']
+
         if model is None:
             continue
 
@@ -225,9 +236,9 @@ def plot_combined_roc_curves(results, X_test, y_test):
 
         fpr, tpr, _ = roc_curve(y_test, y_prob)
         roc_auc = auc(fpr, tpr)
-        plt.plot(fpr, tpr, label=f'{name} (AUC={roc_auc:.2f})', color=color)
+        plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.2f})', color=color)
 
-    plt.plot([0, 1], [0, 1], '--', color='gray')
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('ROC Curve (All Models)')
@@ -242,6 +253,7 @@ def plot_learning_curve(estimator, X, y, model_name):
     train_std = train_scores.std(axis=1)
     val_mean = val_scores.mean(axis=1)
     val_std = val_scores.std(axis=1)
+
     plt.plot(sizes, train_mean, 'o-', label='Train')
     plt.plot(sizes, val_mean, 'o-', label='Validation')
     plt.fill_between(sizes, train_mean - train_std, train_mean + train_std, alpha=0.2)
@@ -258,6 +270,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
     if hasattr(model, 'feature_importances_'):
         imp = model.feature_importances_
         sorted_idx = np.argsort(imp)[::-1]
+
         plt.figure(figsize=(12, 6))
         sns.barplot(x=imp[sorted_idx][:10], y=np.array(feature_names)[sorted_idx][:10])
         plt.title(f'Feature Importance - {model_name}')
@@ -267,6 +280,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
 
     result = permutation_importance(model, X, y, n_repeats=10, random_state=RANDOM_STATE)
     idx = result.importances_mean.argsort()[::-1]
+
     plt.figure(figsize=(12, 6))
     sns.barplot(x=result.importances_mean[idx][:10], y=np.array(feature_names)[idx][:10])
     plt.title(f'Permutation Importance - {model_name}')
@@ -276,20 +290,22 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
 
 def plot_decision_tree(model, feature_names):
     if hasattr(model, 'tree_'):
-        plt.figure(figsize=(20, 8))
-        plot_tree(model, feature_names=feature_names,
-                  class_names=['Beginner', 'Trained'], filled=True)
+        plt.figure(figsize=(30, 10))
+        plot_tree(model, feature_names=feature_names, class_names=['Beginner', 'Trained'], filled=True, rounded=True, fontsize=10)
+        plt.title(f"Decision Tree Structure")
+        plt.tight_layout()
         plt.show()
 
+    print(f"Max Depth of {model_name}: {model.get_depth()}")
+
+
 # ========================================
-# Run Model (에러 수정 버전)
+# Run Model
 # ========================================
 def run_model(model_name, X_train, X_test, y_train, y_test, selected_features, n_trials=5):
     sampler = optuna.samplers.RandomSampler()
     study = optuna.create_study(direction="maximize", sampler=sampler)
-    study.optimize(lambda trial: objective(trial, model_name, X_train, y_train, selected_features),
-                   n_trials=n_trials)
-
+    study.optimize(lambda trial: objective(trial, model_name, X_train, y_train, selected_features), n_trials=n_trials)
     best_params = study.best_params
     print(f"\n========== {model_name} (Light) ==========")
     print("Best Params:", best_params)
@@ -297,37 +313,41 @@ def run_model(model_name, X_train, X_test, y_train, y_test, selected_features, n
 
     # 모델별 best_params 적용
     if model_name == 'Logistic Regression':
-        model = LogisticRegression(max_iter=500, random_state=RANDOM_STATE,
-                                   penalty="l2", solver="liblinear", **best_params)
+        model = LogisticRegression(max_iter=500, random_state=RANDOM_STATE, penalty="l2", solver="liblinear", **best_params)
+
     elif model_name == 'Decision Tree':
         model = DecisionTreeClassifier(random_state=RANDOM_STATE, **best_params)
+
     elif model_name == 'Random Forest':
         model = RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1, **best_params)
+
     elif model_name == 'XGBoost':
         model = XGBClassifier(random_state=RANDOM_STATE, eval_metric="logloss", n_jobs=-1, **best_params)
+
     elif model_name == 'LightGBM':
         model = LGBMClassifier(random_state=RANDOM_STATE, n_jobs=-1, **best_params)
+
     elif model_name == 'Support Vector Machine':
-        model = SVC(probability=True, random_state=RANDOM_STATE,
-                    kernel="rbf", gamma="scale", **best_params)
+        model = SVC(probability=True, random_state=RANDOM_STATE, kernel="rbf", gamma="scale", **best_params)
+
     else:
         raise ValueError(f"지원하지 않는 모델: {model_name}")
 
     X_train_df = pd.DataFrame(X_train, columns=selected_features)
     X_test_df = pd.DataFrame(X_test, columns=selected_features)
-
     model.fit(X_train_df, y_train)
     y_pred = model.predict(X_test_df)
-    y_proba = model.predict_proba(X_test_df)[:, 1] if hasattr(model, "predict_proba") else None
-
+    y_proba = model.predict_proba(X_test_df)[:, 1]
     print(classification_report(y_test, y_pred))
 
     # 시각화
     plot_confusion_matrix(y_test, y_pred, model_name)
     if y_proba is not None:
         plot_roc_curve(y_test, y_proba, model_name)
+
     plot_learning_curve(model, X_train_df, y_train, model_name)
     plot_feature_importance(model, X_train_df, y_train, selected_features, model_name)
+
     if model_name == 'Decision Tree':
         plot_decision_tree(model, selected_features)
 
@@ -346,12 +366,10 @@ if __name__ == '__main__':
 
     correlated_pairs = find_highly_correlation(X_train_raw, threshold=0.85)
     to_drop = drop_low_importance(X_train_raw, y_train, correlated_pairs)
-
     all_corr_vars = set([col for pair in correlated_pairs for col in pair[:2]])
     remaining_corr_vars = all_corr_vars - set(to_drop)
     uncorrelated_vars = set(X_train_raw.columns) - all_corr_vars
     final_candidate_vars = list(remaining_corr_vars | uncorrelated_vars)
-
     selected_features = run_rfecv(X_train_raw[final_candidate_vars], y_train)
 
     scaler = StandardScaler()
@@ -370,8 +388,7 @@ if __name__ == '__main__':
 
     results = []
     for model_name in model_names:
-        metrics = run_model(model_name, X_train, X_test, y_train, y_test,
-                            selected_features, n_trials=5)
+        metrics = run_model(model_name, X_train, X_test, y_train, y_test, selected_features, n_trials=5)
         results.append(metrics)
 
     # ROC 통합
