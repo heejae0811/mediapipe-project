@@ -4,7 +4,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import matplotlib as mpl
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
@@ -27,16 +26,6 @@ warnings.filterwarnings('ignore')
 
 # Global Variable
 RANDOM_STATE = 42
-# mpl.rcParams['figure.dpi'] = 300  # 고해상도
-# mpl.rcParams['savefig.dpi'] = 300
-# mpl.rcParams['font.size'] = 14
-# mpl.rcParams['axes.titlesize'] = 16
-# mpl.rcParams['axes.labelsize'] = 14
-# mpl.rcParams['legend.fontsize'] = 12
-# mpl.rcParams['lines.linewidth'] = 2.5
-# mpl.rcParams['grid.linestyle'] = '--'
-# mpl.rcParams['grid.alpha'] = 0.6
-# sns.set_palette("Set2")
 
 # ========================================
 # Data Processing: 데이터 로드 및 기본 전처리
@@ -97,18 +86,14 @@ def feature_selection(X, y, final_k=50):
     print(f"   제거된 낮은 분산 특성: {len(low_variance_features)}개")
     print(f"   남은 특성: {len(remaining_features)}개")
 
-    # 2단계: 상관관계 필터링 (높은 상관관계 제거)
+    # 2단계: 상관관계 필터링 (0.9 이상 제거)
     print("\n2. 상관관계 필터링 (Pearson Correlation)")
     corr_threshold = 0.90  # 높은 임계값으로 설정
     corr_matrix = X_filtered.corr().abs()
-    upper_triangle = corr_matrix.where(
-        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-    )
-
+    upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     highly_corr_features = [column for column in upper_triangle.columns if any(upper_triangle[column] > corr_threshold)]
     remaining_features = [col for col in remaining_features if col not in highly_corr_features]
     X_filtered = X_filtered[remaining_features]
-
     print(f"   제거된 높은 상관관계 특성: {len(highly_corr_features)}개")
     print(f"   남은 특성: {len(remaining_features)}개")
 
@@ -305,7 +290,6 @@ def evaluate_model(model, model_name, X_train, X_test, y_train, y_test):
 # ========================================
 # Visualization Functions
 # ========================================
-
 def plot_confusion_matrix(y_true, y_pred, model_name):
     fig, ax = plt.subplots(figsize=(10, 6))
     ConfusionMatrixDisplay.from_predictions(
@@ -456,9 +440,7 @@ def plot_model_comparison(results_df):
 
     for i, bar in enumerate(bars):
         width = bar.get_width()
-        plt.text(width + 0.01,
-                 bar.get_y() + bar.get_height() / 2,
-                 f'{width:.3f}', ha='left', va='center', fontsize=12)
+        plt.text(width + 0.01, bar.get_y() + bar.get_height() / 2, f'{width:.3f}', ha='left', va='center', fontsize=12)
 
     plt.title('F1 Score - All Models', fontsize=16, weight='bold')
     plt.xlabel('F1 Score')
@@ -508,9 +490,7 @@ def main():
         results = []
 
         for model_name, model in models.items():
-            metrics, y_pred, y_proba, trained_model = evaluate_model(
-                model, model_name, X_train, X_test, y_train, y_test
-            )
+            metrics, y_pred, y_proba, trained_model = evaluate_model(model, model_name, X_train, X_test, y_train, y_test)
 
             if metrics is not None:
                 # 교차 검증 결과 추가
@@ -549,9 +529,9 @@ def main():
 
         if len(results) > 0:
             # 결과 DataFrame 생성 및 정렬
-            results_df = pd.DataFrame([{k: v for k, v in result.items()
-                                        if k not in ['Best Model', 'y_pred', 'y_proba']}
-                                       for result in results])
+            results_df = pd.DataFrame(
+                [{k: v for k, v in result.items() if k not in ['Best Model', 'y_pred', 'y_proba']} for result in results]
+            )
             results_df = results_df.sort_values('F1', ascending=False)
 
             # 성능 순위 출력
@@ -569,9 +549,7 @@ def main():
 
             # 최고 성능 모델에 대한 상세 분석
             best_result = results[results_df.index[0]]
-            best_model = best_result['Best Model']
             best_model_name = best_result['Model']
-
             print(f"\n🥇 최고 성능 모델: {best_model_name}")
 
             # 분류 보고서
