@@ -1,91 +1,125 @@
-import glob
+import os, glob
 import pandas as pd
-from scipy.stats import shapiro, levene, pearsonr, spearmanr
-import seaborn as sns
-import matplotlib.pyplot as plt
+import networkx as nx
+from scipy.stats import shapiro, pearsonr, spearmanr
 
-# 파일 불러오기
-csv_files = glob.glob('./csv_features/*.csv')
-df = pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True)
+os.makedirs('./result', exist_ok=True)
 
-# 제외할 변수 (얼굴 관절에서 코만 선택)
-exclude_keywords = [
-    'left_eye_inner', 'left_eye', 'left_outer', 'right_eye_inner', 'right_eye', 'right_eye_outer',
-    'left_ear', 'right_ear', 'mouth_left', 'mouth_right'
-]
+def correlation_analyze(df):
+    metrics = [col for col in df.columns if col not in ['id', 'label']]
+    results = []
 
-# 분석할 변수
-metrics = [
-    col for col in df.columns
-    if col not in ['id', 'label'] and
-       not any(keyword in col for keyword in exclude_keywords)
-]
+    # 변수쌍별 상관계수 계산 (정규성 고려)
+    for i in range(len(metrics)):
+        for j in range(i+1, len(metrics)):
+            var1, var2 = metrics[i], metrics[j]
+            data = df[[var1, var2]].dropna()
+            if len(data) < 3:
+                continue
 
-# 결과 저장용여
-results = []
+            x, y = data[var1], data[var2]
+            p_norm_x = shapiro(x).pvalue
+            p_norm_y = shapiro(y).pvalue
 
-# 정규성, 등분산, 상관계수 계산
-for i in range(len(metrics)):
-    for j in range(i + 1, len(metrics)):
-        var1, var2 = metrics[i], metrics[j]
-        data = df[[var1, var2]].dropna()
-        if len(data) < 3:
-            continue
+            if p_norm_x > 0.05 and p_norm_y > 0.05:
+                corr, _ = pearsonr(x, y)
+                method = 'Pearson'
+            else:
+                corr, _ = spearmanr(x, y)
+                method = 'Spearman'
 
-        x, y = data[var1], data[var2]
+            results.append({
+                '변수1': var1,
+                '변수2': var2,
+                '상관계수': round(corr, 4),
+                '사용된방법': method,
+                'var1_정규성_p': round(p_norm_x, 4),
+                'var2_정규성_p': round(p_norm_y, 4)
+            })
 
-        # 정규성 검정
-        p_norm_x = shapiro(x).pvalue
-        p_norm_y = shapiro(y).pvalue
-        normal = p_norm_x > 0.05 and p_norm_y > 0.05
+    res_df = pd.DataFrame(results)
 
-        # 등분산 검정
-        p_levene = levene(x, y).pvalue
-        equal_var = p_levene > 0.05
+    # 상관계수 ≥ 0.9인 변수쌍 추출
+    high_corr_df = res_df[res_df['상관계수'].abs() >= 0.9].copy()
 
-        # 상관계수 선택
-        if normal:
-            corr, p_val = pearsonr(x, y)
-            method = 'Pearson'
-        else:
-            corr, p_val = spearmanr(x, y)
-            method = 'Spearman'
+    # 네트워크 생성
+    G = nx.Graph()
+    G.add_edges_from(zip(high_corr_df['변수1'], high_corr_df['변수2']))
 
-        results.append({
-            '변수1': var1,
-            '변수2': var2,
-            '상관계수': round(corr, 4),
-            'p값': round(p_val, 4),
-            '사용된 방법': method,
-            'var1_정규성_p': round(p_norm_x, 4),
-            'var2_정규성_p': round(p_norm_y, 4),
-            '등분산성_p': round(p_levene, 4)
-        })
+    to_keep = []
+    to_drop = []
 
-# 결과를 데이터프레임으로 변환
-res_df = pd.DataFrame(results)
+    # 각 그룹에서 label과의 상관이 가장 높은 변수 남기기
+    for group in nx.connected_components(G):
+        group = list(group)
 
-# 상관행렬 생성 (피어슨 기준)
-corr_matrix = df[metrics].corr(method='pearson')
+        best_var = None
+        best_corr = -float('inf')
 
-# Heatmap
-plt.figure(figsize=(12, 10))
-sns.heatmap(corr_matrix, annot=False, cmap='coolwarm')
-plt.title('Correlation Heatmap (Pearson)')
-plt.tight_layout()
-plt.show()
+        for var in group:
+            data = df[[var, 'label']].dropna()
+            if len(data) < 3:
+                continue
 
-# |r| >= 0.9인 변수 쌍 추출
-high_corr = res_df[(res_df['상관계수'].abs() >= 0.9) & (res_df['변수1'] != res_df['변수2'])]
-print(f'✅ 총 {len(csv_files)}개의 파일을 분석했습니다.')
-print(f'\n✅ |r| >= 0.9인 변수쌍 {len(high_corr)}개 발견')
+            p_norm_x = shapiro(data[var]).pvalue
+            p_norm_y = shapiro(data['label']).pvalue
 
-print("0000000", high_corr)
+            if p_norm_x > 0.05 and p_norm_y > 0.05:
+                corr, _ = pearsonr(data[var], data['label'])
+            else:
+                corr, _ = spearmanr(data[var], data['label'])
 
-# 결과를 엑셀로 저장
-with pd.ExcelWriter('./result/correlation_analysis.xlsx') as writer:
-    res_df.to_excel(writer, sheet_name='상관분석결과', index=False)
-    high_corr.to_excel(writer, sheet_name='높은상관(>0.9)', index=False)
-    corr_matrix.to_excel(writer, sheet_name='상관행렬')
+            if abs(corr) > best_corr:
+                best_corr = abs(corr)
+                best_var = var
 
-print('✅ 엑셀 파일 저장 완료')
+        if best_var is not None:
+            to_keep.append(best_var)
+            to_drop.extend([v for v in group if v != best_var])
+
+    # 그룹에 속하지 않은 변수 + 그룹에서 남긴 변수
+    all_grouped = set(high_corr_df['변수1']).union(high_corr_df['변수2'])
+    remaining_vars = [v for v in metrics if (v in to_keep) or (v not in all_grouped)]
+
+    return res_df, high_corr_df, to_keep, to_drop, remaining_vars
+
+
+# 데이터 불러오기
+dfs = []
+for file in glob.glob('./features_xlsx/*.xlsx'):
+    df_tmp = pd.read_excel(file, sheet_name=0)
+    dfs.append(df_tmp)
+
+if not dfs:
+    raise FileNotFoundError("❌ './features_xlsx/' 폴더에 .xlsx 파일이 없습니다.")
+
+df = pd.concat(dfs, ignore_index=True)
+
+# 분석
+res_df, high_corr_df, to_keep, to_drop, remaining_vars = correlation_analyze(df)
+
+# 결과 출력
+print("\n✅ 정규성에 따라 계산된 상관계수 결과 (앞부분):")
+print(res_df.head())
+
+print("\n✅ 상관계수 ≥ 0.9인 변수쌍:")
+print(high_corr_df)
+
+print("\n✅ 각 그룹에서 남긴 변수 (label과의 상관 최대):")
+print(to_keep)
+
+print("\n✅ 제거한 변수:")
+print(to_drop)
+
+print("\n✅ 최종 남은 변수:")
+print(remaining_vars)
+
+# 엑셀로 저장
+with pd.ExcelWriter('./result/features_correlation.xlsx') as writer:
+    res_df.to_excel(writer, sheet_name='모든_쌍_결과', index=False)
+    high_corr_df.to_excel(writer, sheet_name='0.9이상_쌍', index=False)
+    pd.DataFrame({'그룹별_남긴변수': to_keep}).to_excel(writer, sheet_name='그룹별_남긴변수', index=False)
+    pd.DataFrame({'제거한변수': to_drop}).to_excel(writer, sheet_name='제거한변수', index=False)
+    pd.DataFrame({'최종남은변수': remaining_vars}).to_excel(writer, sheet_name='최종남은변수', index=False)
+
+print("\n결과가 './result/features_correlation.xlsx' 에 저장되었습니다.")

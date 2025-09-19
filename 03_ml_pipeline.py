@@ -339,7 +339,7 @@ def plot_roc_curve(y_true, y_proba, model_name):
 
 def plot_combined_roc_curves(results, X_test, y_test):
     plt.figure(figsize=(10, 6))
-    colors = plt.cm.tab10.colors
+    colors = plt.cm.Set2.colors
 
     for i, result in enumerate(results):
         if result['Best Model'] is None:
@@ -400,13 +400,13 @@ def plot_learning_curve(estimator, X, y, model_name):
 
 
 def plot_feature_importance(model, X, y, feature_names, model_name):
-    colors = sns.color_palette("tab10")
+    colors = sns.color_palette("Set2")
 
     if hasattr(model, 'feature_importances_'):
         imp = model.feature_importances_
         sorted_idx = np.argsort(imp)[::-1]
 
-        plt.figure(figsize=(15, 7))
+        plt.figure(figsize=(10, 6))
         top_features = min(15, len(feature_names))
         sns.barplot(x=imp[sorted_idx][:top_features], y=np.array(feature_names)[sorted_idx][:top_features], palette=colors)
         plt.title(f'Feature Importance - {model_name}', fontsize=16, weight='bold')
@@ -420,7 +420,7 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
         result = permutation_importance(model, X, y, n_repeats=5, random_state=RANDOM_STATE, n_jobs=-1)
         idx = result.importances_mean.argsort()[::-1]
 
-        plt.figure(figsize=(15, 7))
+        plt.figure(figsize=(10, 6))
         top_features = min(15, len(feature_names))
         sns.barplot(x=result.importances_mean[idx][:top_features], y=np.array(feature_names)[idx][:top_features], palette=colors)
         plt.title(f'Permutation Importance - {model_name}', fontsize=16, weight='bold')
@@ -450,7 +450,7 @@ def plot_model_comparison(results_df):
     results_df_sorted = results_df.sort_values('F1', ascending=False)
 
     plt.figure(figsize=(10, 6))
-    colors = sns.color_palette("tab10", len(results_df_sorted))
+    colors = sns.color_palette("Set2", len(results_df_sorted))
 
     bars = plt.barh(results_df_sorted['Model'], results_df_sorted['F1'], color=colors)
 
