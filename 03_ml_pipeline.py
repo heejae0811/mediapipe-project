@@ -1,6 +1,4 @@
-import os
-import glob
-import warnings
+import os, glob, warnings
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -37,7 +35,7 @@ def data_processing():
     if len(csv_files) == 0:
         raise FileNotFoundError("경로에 파일이 없습니다.")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=0) for file in csv_files], ignore_index=True)
+    df_all = pd.concat([pd.read_excel(file, sheet_name=4) for file in csv_files], ignore_index=True)
 
     # 기본 정보 출력
     print(f"총 데이터 수: {len(df_all)}개")
