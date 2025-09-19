@@ -223,7 +223,7 @@ def compute_metrics(y_true, y_pred, y_proba=None):
 # ========================================
 # Cross Validation: 교차 검증
 # ========================================
-def cross_validate_models(models, X, y, cv_folds=5):
+def cross_validate(models, X, y, cv_folds=5):
     print(f"\n🔄 {cv_folds}-Fold 교차 검증 실행 중...")
 
     cv_results = {}
@@ -258,7 +258,7 @@ def cross_validate_models(models, X, y, cv_folds=5):
 # ========================================
 # Model Evaluation
 # ========================================
-def evaluate_model(model, model_name, X_train, X_test, y_train, y_test):
+def evaluate_ml_models(model, model_name, X_train, X_test, y_train, y_test):
     print(f"\n📊 {model_name}")
 
     try:
@@ -321,7 +321,7 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.show()
 
 
-def plot_combined_roc_curves(results, X_test, y_test):
+def plot_roc_comparison(results, X_test, y_test):
     plt.figure(figsize=(10, 6))
     colors = plt.cm.Set2.colors
 
@@ -429,7 +429,7 @@ def plot_decision_tree(model, feature_names):
         print(f"실제 Decision Tree 깊이: {model.get_depth()}")
 
 
-def plot_model_comparison(results_df):
+def plot_f1_comparison(results_df):
     # F1 점수가 높은 모델이 위로 오도록 내림차순 정렬
     results_df_sorted = results_df.sort_values('F1', ascending=False)
 
@@ -483,14 +483,14 @@ def main():
 
         # 5. 교차 검증
         print("\n5️⃣ 교차 검증 수행")
-        cv_results = cross_validate_models(models, X_train, y_train)
+        cv_results = cross_validate(models, X_train, y_train)
 
         # 6. 테스트 세트 평가
         print("\n6️⃣ 테스트 세트 평가")
         results = []
 
         for model_name, model in models.items():
-            metrics, y_pred, y_proba, trained_model = evaluate_model(model, model_name, X_train, X_test, y_train, y_test)
+            metrics, y_pred, y_proba, trained_model = evaluate_ml_models(model, model_name, X_train, X_test, y_train, y_test)
 
             if metrics is not None:
                 # 교차 검증 결과 추가
@@ -544,8 +544,8 @@ def main():
                 print("-" * 60)
 
             # 시각화
-            plot_model_comparison(results_df)
-            plot_combined_roc_curves(results, X_test, y_test)
+            plot_f1_comparison(results_df)
+            plot_roc_comparison(results, X_test, y_test)
 
             # 최고 성능 모델에 대한 상세 분석
             best_result = results[results_df.index[0]]
