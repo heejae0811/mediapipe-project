@@ -1,4 +1,4 @@
-import os, cv2, glob, re
+import os, glob, cv2, re
 import numpy as np
 import pandas as pd
 import mediapipe as mp

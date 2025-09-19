@@ -29,7 +29,7 @@ RANDOM_STATE = 42
 # Data Processing: 데이터 로드 및 기본 전처리
 # ========================================
 def data_processing():
-    csv_files = glob.glob('./features_xlsx_2/*.xlsx')
+    csv_files = glob.glob('./features_xlsx/*.xlsx')
     print(f"\n📂 분석할 파일 수 - {len(csv_files)}개")
 
     if len(csv_files) == 0:
@@ -275,8 +275,7 @@ def evaluate_ml_models(model, model_name, X_train, X_test, y_train, y_test):
 
         # 성능 지표 계산
         metrics = compute_metrics(y_test, y_pred, y_proba)
-
-        print(f"  ✅ F1: {metrics['F1']:.4f}, AUC: {metrics['AUC']:.4f}, Accuracy: {metrics['Accuracy']:.4f}")
+        print(f"F1: {metrics['F1']:.4f}, AUC: {metrics['AUC']:.4f}, Accuracy: {metrics['Accuracy']:.4f}")
 
         return metrics, y_pred, y_proba, model
 
@@ -570,69 +569,8 @@ def main():
                 'Embedded_Method': ['Random Forest Feature Importance'] * len(selected_features)
             }
             feature_df = pd.DataFrame(feature_selection_details)
-            feature_df.to_excel('./result/filter_embedded_selected_features.xlsx', index=False)
-            print(f"선택된 특성 저장: ./result/filter_embedded_selected_features.xlsx")
-
-            # 상세 성능 지표 저장
-            detailed_results = []
-            for result in results:
-                detailed_row = {
-                    'Model': result['Model'],
-                    'Test_F1': result['F1'],
-                    'Test_AUC': result['AUC'],
-                    'Test_Accuracy': result['Accuracy'],
-                    'Test_Precision': result['Precision'],
-                    'Test_Recall': result['Recall'],
-                    'Test_Balanced_Accuracy': result['Balanced_Accuracy'],
-                    'Test_Specificity': result['Specificity'],
-                    'Test_Sensitivity': result['Sensitivity'],
-                    'Test_MCC': result['MCC'],
-                    'CV_F1_Mean': result['CV_F1'],
-                    'CV_F1_Std': result['CV_F1_std']
-                }
-                detailed_results.append(detailed_row)
-
-            detailed_df = pd.DataFrame(detailed_results)
-            detailed_df.to_excel('./result/detailed_performance_metrics.xlsx', index=False)
-            print(f"상세 성능 지표 저장: ./result/detailed_performance_metrics.xlsx")
-
-            # 최적 Filter 조합 방법론 요약 저장
-            methodology_summary = {
-                'Step': [
-                    '1_Variance_Filtering',
-                    '2_Correlation_Filtering',
-                    '3_ANOVA_F_test_Primary',
-                    '4_Mutual_Information_Final'
-                ],
-                'Method': [
-                    'Variance Threshold',
-                    'Pearson Correlation',
-                    'ANOVA F-test',
-                    'Mutual Information'
-                ],
-                'Threshold_Parameter': [
-                    '0.001',
-                    '0.95',
-                    f'Top {50 * 2} features',
-                    f'Top {50} features'
-                ],
-                'Purpose': [
-                    'Remove meaningless low-variance features',
-                    'Remove highly correlated redundant features',
-                    'Statistical significance-based primary selection',
-                    'Non-linear relationship-based final selection'
-                ],
-                'Paper_Reference': [
-                    'Table 3 - Variance based filtering',
-                    'Table 3 - Sr.No. 19 Pearson correlation',
-                    'Table 3 - Sr.No. 21 ANOVA F-value',
-                    'Table 3 - Sr.No. 11 Mutual Information'
-                ]
-            }
-            methodology_df = pd.DataFrame(methodology_summary)
-            methodology_df.to_excel('./result/ml_summary.xlsx', index=False)
-            print(f"최적 방법론 요약 저장: ./result/ml_summary.xlsx")
-
+            feature_df.to_excel('./result/selected_features.xlsx', index=False)
+            print(f"선택된 특성 저장: ./result/selected_features.xlsx")
         else:
             print("❌ 평가된 모델이 없습니다.")
 
