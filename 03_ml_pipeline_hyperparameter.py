@@ -121,7 +121,9 @@ def feature_selection(X, y, final_k=50):
     if len(remaining_features) > final_k:
         print(f"\n4. Mutual Information으로 최종 선별 ({final_k}개)")
 
-        selector_mi = SelectKBest(score_func=mutual_info_classif, k=final_k)
+        selector_mi = SelectKBest(score_func=lambda X, y: mutual_info_classif(X, y, random_state=RANDOM_STATE), k=final_k)
+
+        SelectKBest
         selector_mi.fit(X_filtered, y)
 
         final_features = X_filtered.columns[selector_mi.get_support()].tolist()
@@ -156,19 +158,22 @@ def feature_selection(X, y, final_k=50):
 def create_ml_models(use_tuning=False, X_train=None, y_train=None):
     print(f"\n📦 머신러닝 모델들 생성 중 {'(하이퍼파라미터 튜닝)' if use_tuning else '(기본 파라미터)'}...")
 
-    base_models = {
-        # 기존 모델 정의와 동일
+    models = {
+        # 선형 기반 모델 (Linear-based)
         'Logistic Regression': LogisticRegression(
             random_state=RANDOM_STATE,
             max_iter=1000
         ),
-        'k-NN': KNeighborsClassifier(
+        # 거리 기반 모델 (Distance-based
+        'KNN': KNeighborsClassifier(
             n_jobs=-1
         ),
+        # 마진 기반 모델 (Margin-based)
         'Support Vector Machine': SVC(
             probability=True,
             random_state=RANDOM_STATE
         ),
+        # 트리 기반 모델 (Tree-based)
         'Decision Tree': DecisionTreeClassifier(
             random_state=RANDOM_STATE
         ),
@@ -176,6 +181,7 @@ def create_ml_models(use_tuning=False, X_train=None, y_train=None):
             random_state=RANDOM_STATE,
             n_jobs=-1
         ),
+        # 그래디언트 부스팅 기반 모델 (Gradient Boosting-based)
         'LightGBM': LGBMClassifier(
             random_state=RANDOM_STATE,
             verbosity=-1,
@@ -196,25 +202,25 @@ def create_ml_models(use_tuning=False, X_train=None, y_train=None):
     if use_tuning:
         if X_train is None or y_train is None:
             print("❌ 튜닝을 위한 훈련 데이터가 필요합니다.")
-            return base_models
+            return models
 
-        return hyperparameter_tuning(base_models, X_train, y_train)
+        return hyperparameter_tuning(models, X_train, y_train)
     else:
-        print(f"{len(base_models)}개 기본 모델 생성 완료!")
-        return base_models
+        print(f"{len(models)}개 기본 모델 생성 완료!")
+        return models
 
 
 # ========================================
 # Hyperparameter Tuning
 # ========================================
-def get_hyperparameter_grids():
+def hyperparameter_grids():
     return {
         'Logistic Regression': {
             'C': [0.01, 0.1, 1, 10, 100],
             'solver': ['liblinear', 'lbfgs'],
             'max_iter': [1000]
         },
-        'k-NN': {
+        'KNN': {
             'n_neighbors': [3, 5, 7, 11, 15],
             'weights': ['uniform', 'distance']
         },
@@ -254,7 +260,7 @@ def get_hyperparameter_grids():
 def hyperparameter_tuning(models, X_train, y_train):
     print("\n🎯 하이퍼파라미터 튜닝 시작 (Grid Search)")
 
-    param_grids = get_hyperparameter_grids()
+    param_grids = hyperparameter_grids()
     tuned_models = {}
     cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
 
@@ -290,7 +296,7 @@ def hyperparameter_tuning(models, X_train, y_train):
 # ========================================
 def compute_metrics(y_true, y_pred, y_proba=None):
     cm = confusion_matrix(y_true, y_pred)
-    if cm.size == 4:  # 2x2 confusion matrix
+    if cm.size == 4:
         tn, fp, fn, tp = cm.ravel()
         specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
         sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
@@ -406,7 +412,6 @@ def plot_confusion_matrix(y_true, y_pred, model_name):
 def plot_roc_curve(y_true, y_proba, model_name):
     fpr, tpr, _ = roc_curve(y_true, y_proba)
     roc_auc = auc(fpr, tpr)
-
     plt.figure(figsize=(10, 6))
     plt.plot(fpr, tpr, label=f'{model_name} (AUC = {roc_auc:.3f})', linewidth=2)
     plt.plot([0, 1], [0, 1], 'k--', linewidth=1)
@@ -419,26 +424,21 @@ def plot_roc_curve(y_true, y_proba, model_name):
     plt.show()
 
 
-def plot_roc_comparison(results, X_test, y_test):
+def plot_roc_comparison(results, y_test):
     plt.figure(figsize=(10, 6))
     colors = plt.cm.Set2.colors
 
     for i, result in enumerate(results):
-        if result['Best Model'] is None:
+        if result['Best Model'] is None or result['y_proba'] is None:
             continue
-        model = result['Best Model']
         name = result['Model']
+        y_prob = result['y_proba']
 
         try:
-            if hasattr(model, "predict_proba"):
-                y_prob = model.predict_proba(X_test)[:, 1]
-            elif hasattr(model, "decision_function"):
-                y_prob = model.decision_function(X_test)
-            else:
-                continue
             fpr, tpr, _ = roc_curve(y_test, y_prob)
             roc_auc = auc(fpr, tpr)
-            plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.3f})', color=colors[i % len(colors)], linewidth=2)
+            plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.3f})',
+                     color=colors[i % len(colors)], linewidth=2)
         except Exception as e:
             print(f"{name} ROC 곡선 생성 오류: {e}")
             continue
@@ -481,16 +481,17 @@ def plot_learning_curve(estimator, X, y, model_name):
         print(f"Learning curve 생성 오류: {e}")
 
 
-def plot_feature_importance(model, X, y, feature_names, model_name):
+def plot_feature_importance(model, X, y, feature_names, model_name, use_permutation=False):
     colors = sns.color_palette("Set2")
 
     if hasattr(model, 'feature_importances_'):
         imp = model.feature_importances_
         sorted_idx = np.argsort(imp)[::-1]
-
         plt.figure(figsize=(10, 6))
         top_features = min(15, len(feature_names))
-        sns.barplot(x=imp[sorted_idx][:top_features], y=np.array(feature_names)[sorted_idx][:top_features], palette=colors)
+        sns.barplot(x=imp[sorted_idx][:top_features],
+                    y=np.array(feature_names)[sorted_idx][:top_features],
+                    palette=colors)
         plt.title(f'Feature Importance - {model_name}', fontsize=16, weight='bold')
         plt.xlabel('Importance Score')
         plt.ylabel('Features')
@@ -498,22 +499,29 @@ def plot_feature_importance(model, X, y, feature_names, model_name):
         plt.tight_layout()
         plt.show()
 
-    try:
-        result = permutation_importance(model, X, y, n_repeats=5, random_state=RANDOM_STATE, n_jobs=-1)
-        idx = result.importances_mean.argsort()[::-1]
-
-        plt.figure(figsize=(10, 6))
-        top_features = min(15, len(feature_names))
-        sns.barplot(x=result.importances_mean[idx][:top_features], y=np.array(feature_names)[idx][:top_features], palette=colors)
-        plt.title(f'Permutation Importance - {model_name}', fontsize=16, weight='bold')
-        plt.xlabel('Importance Score')
-        plt.ylabel('Features')
-        plt.grid(True, axis='x', linestyle='-', alpha=0.5)
-        plt.tight_layout()
-        plt.show()
-
-    except Exception as e:
-        print(f"Permutation importance 계산 오류: {e}")
+    # Permutation Importance (옵션)
+    if use_permutation:
+        try:
+            result = permutation_importance(
+                model, X, y,
+                n_repeats=5,
+                random_state=RANDOM_STATE,
+                n_jobs=-1
+            )
+            idx = result.importances_mean.argsort()[::-1]
+            plt.figure(figsize=(10, 6))
+            top_features = min(15, len(feature_names))
+            sns.barplot(x=result.importances_mean[idx][:top_features],
+                        y=np.array(feature_names)[idx][:top_features],
+                        palette=colors)
+            plt.title(f'Permutation Importance - {model_name}', fontsize=16, weight='bold')
+            plt.xlabel('Importance Score')
+            plt.ylabel('Features')
+            plt.grid(True, axis='x', linestyle='-', alpha=0.5)
+            plt.tight_layout()
+            plt.show()
+        except Exception as e:
+            print(f"Permutation importance 계산 오류: {e}")
 
 
 def plot_decision_tree(model, feature_names):
@@ -523,17 +531,14 @@ def plot_decision_tree(model, feature_names):
         plt.title("Decision Tree Structure (Max Depth 3)", fontsize=16, weight='bold')
         plt.tight_layout()
         plt.show()
-
         print(f"실제 Decision Tree 깊이: {model.get_depth()}")
 
 
 def plot_f1_comparison(results_df):
     # F1 점수가 높은 모델이 위로 오도록 내림차순 정렬
     results_df_sorted = results_df.sort_values('F1', ascending=False)
-
     plt.figure(figsize=(10, 6))
     colors = sns.color_palette("Set2", len(results_df_sorted))
-
     bars = plt.barh(results_df_sorted['Model'], results_df_sorted['F1'], color=colors)
 
     for i, bar in enumerate(bars):
@@ -565,33 +570,47 @@ def main(use_hyperparameter_tuning=False):
         print("\n2️⃣ Feature Selection: filter + embedded")
         selected_features = feature_selection(X_train_raw, y_train, final_k=50)
 
-        # 3. 데이터 스케일링
-        print("\n3️⃣ 데이터 스케일링")
+        # 3. 모델 생성
+        print("\n3️⃣ 모델 생성")
+        models = create_ml_models(use_tuning=use_hyperparameter_tuning, X_train=X_train_raw[selected_features], y_train=y_train)
+
+        # 4. 데이터 스케일링 (모델별로 다르게 처리)
+        print("\n4️⃣ 데이터 스케일링 적용 (필요한 모델만)")
         scaler = StandardScaler()
-        X_train = scaler.fit_transform(X_train_raw[selected_features])
-        X_test = scaler.transform(X_test_raw[selected_features])
 
-        # DataFrame 형태로 변환
-        X_train = pd.DataFrame(X_train, columns=selected_features)
-        X_test = pd.DataFrame(X_test, columns=selected_features)
+        # 스케일링 필요한 모델 리스트
+        scale_needed = ['Logistic Regression', 'KNN', 'Support Vector Machine']
 
-        # 4. 모델 생성
-        print("\n4️⃣ 모델 생성")
-        if use_hyperparameter_tuning:
-            models = create_ml_models(use_tuning=True, X_train=X_train, y_train=y_train)
-        else:
-            models = create_ml_models()
+        scaled_X_train = {}
+        scaled_X_test = {}
 
-        # 5. 교차 검증
-        print("\n5️⃣ 교차 검증 수행")
-        cv_results = cross_validate(models, X_train, y_train)
+        for model_name in models.keys():
+            if model_name in scale_needed:
+                print(f"   🔹 {model_name}: 스케일링 적용")
+                X_train_scaled = scaler.fit_transform(X_train_raw[selected_features])
+                X_test_scaled = scaler.transform(X_test_raw[selected_features])
+                scaled_X_train[model_name] = pd.DataFrame(X_train_scaled, columns=selected_features)
+                scaled_X_test[model_name] = pd.DataFrame(X_test_scaled, columns=selected_features)
+            else:
+                print(f"   ⚪ {model_name}: 스케일링 미적용")
+                scaled_X_train[model_name] = X_train_raw[selected_features].copy()
+                scaled_X_test[model_name] = X_test_raw[selected_features].copy()
 
-        # 6. 테스트 세트 평가
-        print("\n6️⃣ 테스트 세트 평가")
+        # 5. 교차 검증 + 테스트 세트 평가
+        print("\n5️⃣ 교차 검증 및 평가")
+        cv_results = {}
         results = []
 
         for model_name, model in models.items():
-            metrics, y_pred, y_proba, trained_model = evaluate_ml_models(model, model_name, X_train, X_test, y_train, y_test)
+            # 교차 검증
+            cv_results.update(cross_validate({model_name: model}, scaled_X_train[model_name], y_train))
+
+            # 테스트 세트 평가
+            metrics, y_pred, y_proba, trained_model = evaluate_ml_models(
+                model, model_name,
+                scaled_X_train[model_name], scaled_X_test[model_name],
+                y_train, y_test
+            )
 
             if metrics is not None:
                 # 교차 검증 결과 추가
@@ -601,6 +620,7 @@ def main(use_hyperparameter_tuning=False):
                 result_entry = {
                     'Model': model_name,
                     'Best Model': trained_model,
+                    'Best Params': getattr(trained_model, "best_params_", None) or {},
                     'y_pred': y_pred,
                     'y_proba': y_proba,
                     **metrics
@@ -615,68 +635,51 @@ def main(use_hyperparameter_tuning=False):
                     plot_roc_curve(y_test, y_proba, model_name)
 
                 # Learning Curve
-                plot_learning_curve(trained_model, X_train, y_train, model_name)
+                plot_learning_curve(trained_model, scaled_X_train[model_name], y_train, model_name)
 
                 # Feature Importance / Permutation Importance
-                plot_feature_importance(trained_model, X_train, y_train, selected_features, model_name)
+                plot_feature_importance(trained_model, scaled_X_train[model_name], y_train, selected_features, model_name, use_permutation=True)
 
                 # Decision Tree 모델인 경우만
                 if model_name == 'Decision Tree':
                     plot_decision_tree(trained_model, selected_features)
 
-        # 7. 결과 분석 및 시각화
-        print("\n7️⃣ 머신러닝 결과 분석")
+        # 6. 결과 분석 및 시각화
+        print("\n6️⃣ 머신러닝 결과 분석")
         print("-" * 60)
 
         if len(results) > 0:
-            # 결과 DataFrame 생성 및 정렬
             results_df = pd.DataFrame(
                 [{k: v for k, v in result.items() if k not in ['Best Model', 'y_pred', 'y_proba']} for result in results]
             )
             results_df = results_df.sort_values('F1', ascending=False)
 
-            # 성능 순위 출력
             print(f"\n🏆 모델 성능 순위 (F1 Score 기준):")
             for i, row in results_df.iterrows():
-                rank = len(results_df) - results_df.index.get_loc(i)
-                print(f"{rank}. {row['Model']}")
-                print(f"   테스트 F1: {row['F1']:.4f} | AUC: {row['AUC']:.4f} | Accuracy: {row['Accuracy']:.4f}")
-                print(f"   교차검증 F1: {row['CV_F1']:.4f} ± {row['CV_F1_std']:.4f}")
-                print("-" * 60)
+                print(f"- {row['Model']} | F1={row['F1']:.4f}, AUC={row['AUC']:.4f}, Acc={row['Accuracy']:.4f} | CV_F1={row['CV_F1']:.4f} ± {row['CV_F1_std']:.4f}")
 
             # 시각화
             plot_f1_comparison(results_df)
-            plot_roc_comparison(results, X_test, y_test)
+            plot_roc_comparison(results, y_test)
 
-            # 최고 성능 모델에 대한 상세 분석
+            # 최고 성능 모델
             best_result = results[results_df.index[0]]
             best_model_name = best_result['Model']
             print(f"\n🥇 최고 성능 모델: {best_model_name}")
-
-            # 분류 보고서
             print("\n📊 분류 보고서:")
             print(classification_report(y_test, best_result['y_pred'], target_names=['Beginner', 'Trained']))
 
-            # 8. 결과 저장 (엑셀 파일)
-            print("\n8️⃣ 결과 저장")
-
-            # 모델 성능 결과 저장
+            # 결과 저장
             results_df.to_excel('./result/ml_results.xlsx', index=False)
-            print(f"모델 성능 결과 저장: ./result/ml_results.xlsx")
-
-            # 선택된 특성 저장 (Filter + Embedded 방법 정보 포함)
             feature_selection_details = {
                 'Selected_Features': selected_features,
                 'Feature_Index': range(len(selected_features)),
-                'Selection_Method': ['Variance + Correlation Filter + RandomForest Embedded'] * len(selected_features),
+                'Selection_Method': ['Variance + Correlation + ANOVA + MutualInfo'] * len(selected_features),
                 'Filter_Method': ['Variance Threshold + Pearson Correlation'] * len(selected_features),
-                'Embedded_Method': ['Random Forest Feature Importance'] * len(selected_features)
+                'Embedded_Method': ['ANOVA + Mutual Information'] * len(selected_features)
             }
             feature_df = pd.DataFrame(feature_selection_details)
             feature_df.to_excel('./result/selected_features.xlsx', index=False)
-            print(f"선택된 특성 저장: ./result/selected_features.xlsx")
-        else:
-            print("❌ 평가된 모델이 없습니다.")
 
     except Exception as e:
         print(f"❌ 파이프라인 실행 중 오류 발생: {e}")
