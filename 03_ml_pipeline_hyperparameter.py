@@ -1,17 +1,13 @@
-# 기본 라이브러리
 import os
 import glob
 import warnings
 import numpy as np
 import pandas as pd
-# 시각화
 import seaborn as sns
 from matplotlib import pyplot as plt
-# 전처리 및 평가
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split, StratifiedKFold, learning_curve, cross_val_score, GridSearchCV
 from sklearn.feature_selection import SelectKBest, f_classif, chi2, mutual_info_classif
-# 머신러닝 모델
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -20,7 +16,6 @@ from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
-# 평가 지표 및 시각화
 from sklearn.metrics import (
     confusion_matrix, classification_report, f1_score, matthews_corrcoef,
     precision_score, recall_score, roc_auc_score, roc_curve, auc,
@@ -162,11 +157,12 @@ def create_ml_models(use_tuning=False, X_train=None, y_train=None):
     print(f"\n📦 머신러닝 모델들 생성 중 {'(하이퍼파라미터 튜닝)' if use_tuning else '(기본 파라미터)'}...")
 
     base_models = {
+        # 기존 모델 정의와 동일
         'Logistic Regression': LogisticRegression(
             random_state=RANDOM_STATE,
             max_iter=1000
         ),
-        'kNN': KNeighborsClassifier(
+        'k-NN': KNeighborsClassifier(
             n_jobs=-1
         ),
         'Support Vector Machine': SVC(

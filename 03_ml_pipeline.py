@@ -1,29 +1,35 @@
-import os, glob, warnings
+import os
+import glob
+import warnings
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split, StratifiedKFold, learning_curve, cross_val_score
+from sklearn.feature_selection import SelectKBest, f_classif, chi2, mutual_info_classif
 from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, plot_tree
 from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from sklearn.metrics import (
     confusion_matrix, classification_report, f1_score, matthews_corrcoef,
     precision_score, recall_score, roc_auc_score, roc_curve, auc,
     balanced_accuracy_score, ConfusionMatrixDisplay
 )
-from sklearn.model_selection import train_test_split, StratifiedKFold, learning_curve, cross_val_score
-from sklearn.feature_selection import SelectKBest, f_classif, chi2, mutual_info_classif
 from sklearn.inspection import permutation_importance
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+
 
 # 경고 메시지 억제
 warnings.filterwarnings('ignore')
 
 # Global Variable
 RANDOM_STATE = 42
+
 
 # ========================================
 # Data Processing: 데이터 로드 및 기본 전처리
@@ -151,15 +157,32 @@ def create_ml_models():
     print("\n📦 머신러닝 기본 파라미터 모델들 생성 중...")
 
     models = {
+        # 선형 기반 모델 (Linear-based)
         'Logistic Regression': LogisticRegression(
             random_state=RANDOM_STATE,
             max_iter=1000
         ),
+        # 거리 기반 모델 (Distance-based
+        'k-NN': KNeighborsClassifier(
+            n_jobs=-1
+        ),
+        # 마진 기반 모델 (Margin-based)
+        'Support Vector Machine': SVC(
+            probability=True,
+            random_state=RANDOM_STATE
+        ),
+        # 트리 기반 모델 (Tree-based)
         'Decision Tree': DecisionTreeClassifier(
             random_state=RANDOM_STATE
         ),
         'Random Forest': RandomForestClassifier(
             random_state=RANDOM_STATE,
+            n_jobs=-1
+        ),
+        # 그래디언트 부스팅 기반 모델 (Gradient Boosting-based)
+        'LightGBM': LGBMClassifier(
+            random_state=RANDOM_STATE,
+            verbosity=-1,
             n_jobs=-1
         ),
         'XGBoost': XGBClassifier(
@@ -168,19 +191,13 @@ def create_ml_models():
             verbosity=0,
             n_jobs=-1
         ),
-        'LightGBM': LGBMClassifier(
+        'CatBoost': CatBoostClassifier(
             random_state=RANDOM_STATE,
-            verbosity=-1,
-            n_jobs=-1
+            verbose=False
         ),
-        'Support Vector Machine': SVC(
-            probability=True,
-            random_state=RANDOM_STATE
-        )
     }
 
     print(f"{len(models)}개 기본 모델 생성 완료!")
-
     return models
 
 
