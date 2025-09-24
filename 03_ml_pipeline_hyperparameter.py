@@ -28,11 +28,13 @@ from sklearn.metrics import (
 )
 from sklearn.inspection import permutation_importance
 
+
 # 경고 메시지 억제
 warnings.filterwarnings('ignore')
 
 # Global Variable
 RANDOM_STATE = 42
+
 
 # ========================================
 # Data Processing: 데이터 로드 및 기본 전처리
@@ -160,7 +162,6 @@ def create_ml_models(use_tuning=False, X_train=None, y_train=None):
     print(f"\n📦 머신러닝 모델들 생성 중 {'(하이퍼파라미터 튜닝)' if use_tuning else '(기본 파라미터)'}...")
 
     base_models = {
-        # 기존 모델 정의와 동일
         'Logistic Regression': LogisticRegression(
             random_state=RANDOM_STATE,
             max_iter=1000
@@ -219,37 +220,49 @@ def get_hyperparameter_grids():
         },
         'k-NN': {
             'n_neighbors': [3, 5, 7, 11, 15],
-            'weights': ['uniform', 'distance']
+            'weights': ['uniform', 'distance'],
+            'p': [1, 2]  # 1: Manhattan, 2: Euclidean
         },
         'Support Vector Machine': {
-            'C': [0.1, 1, 10],
-            'kernel': ['rbf', 'linear'],
-            'gamma': ['scale', 'auto']
+            'C': [0.1, 1, 10, 100],
+            'kernel': ['linear', 'rbf'],
+            'gamma': ['scale', 'auto', 0.01, 0.1, 1]
         },
         'Decision Tree': {
             'max_depth': [3, 5, 10, None],
             'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4],
             'criterion': ['gini', 'entropy']
         },
         'Random Forest': {
-            'n_estimators': [50, 100, 200],
+            'n_estimators': [100, 200, 500],
             'max_depth': [5, 10, None],
-            'min_samples_split': [2, 5]
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4],
+            'max_features': ['sqrt', 'log2']
         },
         'LightGBM': {
-            'n_estimators': [50, 100, 200],
-            'learning_rate': [0.05, 0.1, 0.2],
-            'max_depth': [3, 5, 7]
+            'n_estimators': [100, 200, 500],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2],
+            'max_depth': [-1, 3, 5, 7],
+            'num_leaves': [15, 31, 63],
+            'subsample': [0.7, 0.8, 1.0],
+            'colsample_bytree': [0.7, 0.8, 1.0]
         },
         'XGBoost': {
-            'n_estimators': [50, 100, 200],
-            'learning_rate': [0.05, 0.1, 0.2],
-            'max_depth': [3, 5, 7]
+            'n_estimators': [100, 200, 500],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2],
+            'max_depth': [3, 5, 7],
+            'subsample': [0.7, 0.8, 1.0],
+            'colsample_bytree': [0.7, 0.8, 1.0],
+            'gamma': [0, 0.1, 0.5]
         },
         'CatBoost': {
-            'iterations': [50, 100, 200],
-            'learning_rate': [0.05, 0.1, 0.2],
-            'depth': [3, 4, 5]
+            'iterations': [100, 200, 500],
+            'learning_rate': [0.01, 0.05, 0.1],
+            'depth': [4, 6, 8],
+            'l2_leaf_reg': [1, 3, 5],
+            'bagging_temperature': [0.5, 1, 2]
         }
     }
 
