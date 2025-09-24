@@ -166,7 +166,7 @@ def create_ml_models(use_tuning=False, X_train=None, y_train=None):
             random_state=RANDOM_STATE,
             max_iter=1000
         ),
-        'k-NN': KNeighborsClassifier(
+        'kNN': KNeighborsClassifier(
             n_jobs=-1
         ),
         'Support Vector Machine': SVC(
@@ -220,49 +220,37 @@ def get_hyperparameter_grids():
         },
         'k-NN': {
             'n_neighbors': [3, 5, 7, 11, 15],
-            'weights': ['uniform', 'distance'],
-            'p': [1, 2]  # 1: Manhattan, 2: Euclidean
+            'weights': ['uniform', 'distance']
         },
         'Support Vector Machine': {
-            'C': [0.1, 1, 10, 100],
-            'kernel': ['linear', 'rbf'],
-            'gamma': ['scale', 'auto', 0.01, 0.1, 1]
+            'C': [0.1, 1, 10],
+            'kernel': ['rbf', 'linear'],
+            'gamma': ['scale', 'auto']
         },
         'Decision Tree': {
             'max_depth': [3, 5, 10, None],
             'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
             'criterion': ['gini', 'entropy']
         },
         'Random Forest': {
-            'n_estimators': [100, 200, 500],
+            'n_estimators': [50, 100, 200],
             'max_depth': [5, 10, None],
-            'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
-            'max_features': ['sqrt', 'log2']
+            'min_samples_split': [2, 5]
         },
         'LightGBM': {
-            'n_estimators': [100, 200, 500],
-            'learning_rate': [0.01, 0.05, 0.1, 0.2],
-            'max_depth': [-1, 3, 5, 7],
-            'num_leaves': [15, 31, 63],
-            'subsample': [0.7, 0.8, 1.0],
-            'colsample_bytree': [0.7, 0.8, 1.0]
+            'n_estimators': [50, 100, 200],
+            'learning_rate': [0.05, 0.1, 0.2],
+            'max_depth': [3, 5, 7]
         },
         'XGBoost': {
-            'n_estimators': [100, 200, 500],
-            'learning_rate': [0.01, 0.05, 0.1, 0.2],
-            'max_depth': [3, 5, 7],
-            'subsample': [0.7, 0.8, 1.0],
-            'colsample_bytree': [0.7, 0.8, 1.0],
-            'gamma': [0, 0.1, 0.5]
+            'n_estimators': [50, 100, 200],
+            'learning_rate': [0.05, 0.1, 0.2],
+            'max_depth': [3, 5, 7]
         },
         'CatBoost': {
-            'iterations': [100, 200, 500],
-            'learning_rate': [0.01, 0.05, 0.1],
-            'depth': [4, 6, 8],
-            'l2_leaf_reg': [1, 3, 5],
-            'bagging_temperature': [0.5, 1, 2]
+            'iterations': [50, 100, 200],
+            'learning_rate': [0.05, 0.1, 0.2],
+            'depth': [3, 4, 5]
         }
     }
 
