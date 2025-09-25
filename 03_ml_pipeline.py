@@ -43,7 +43,7 @@ class TuningMethod:
 # ================================
 def data_processing():
     files = glob.glob('./features_xlsx/*.xlsx')
-    print(f"📂 분석할 파일 수 - {len(files)}개")
+    print(f"📂 분석할 파일 수: {len(files)}개")
 
     if not files:
         raise FileNotFoundError("경로에 파일이 없습니다.")
@@ -54,7 +54,6 @@ def data_processing():
 
     y_all = LabelEncoder().fit_transform(df_all['label'])
     print(f"라벨 분포: 0 - {(y_all == 0).sum()}개 / 1 - {(y_all == 1).sum()}개")
-    print("=" * 50)
 
     feature_cols = df_all.select_dtypes(include=['float64', 'int64']).columns.drop('label', errors='ignore')
     raw_features = df_all[feature_cols]
@@ -69,7 +68,10 @@ def data_processing():
 # Feature Selection: filter + embedded
 # ========================================
 def feature_selection(X, y, final_k=50):
-    print(f"\n👉 Feature Selection 시작")
+    print(f"\n{'=' * 60}")
+    print(f"👉 Feature Selection 시작")
+    print(f"{'=' * 60}")
+
     original_features = len(X.columns)
 
     # 1단계: 분산 필터링
@@ -126,7 +128,7 @@ def feature_selection(X, y, final_k=50):
         print(f"\n4. 이미 목표 특성 수 이하이므로 모든 특성 사용: {len(final_features)}개")
 
     # 결과 요약
-    print(f"\n📊 특성 선택 요약:")
+    print(f"\n📊 특성 선택 요약")
     print(f"   원본 특성: {original_features:4d}개")
     print(f"   분산 필터링: {len(X.columns) - len(low_variance_features):4d}개 (제거: {len(low_variance_features)}개)")
     print(f"   상관관계 필터링: {len(remaining_features) + len(highly_corr_features):4d}개 (제거: {len(highly_corr_features)}개)")
@@ -147,6 +149,7 @@ def make_pipeline_with_scaler(model, scaling=True):
         scaler = StandardScaler()
     else:
         scaler = "passthrough"
+
     return Pipeline([("scaler", scaler), ("model", model)])
 
 
@@ -157,7 +160,6 @@ def get_all_models():
     scaling_models = {
         'Logistic Regression': LogisticRegression(
             random_state=RANDOM_STATE,
-            max_iter=1000
         ),
         'K-Neighbors': KNeighborsClassifier(
             n_jobs=-1
@@ -182,9 +184,9 @@ def get_all_models():
         ),
         'XGBoost': XGBClassifier(
             random_state=RANDOM_STATE,
-            eval_metric="logloss",
             n_jobs=-1,
-            verbosity=0
+            verbosity=0,
+            eval_metric="logloss"
         ),
         'CatBoost': CatBoostClassifier(
             random_state=RANDOM_STATE,
@@ -256,7 +258,7 @@ def grid_search_tuning(X_train, y_train):
     models = get_all_models()
 
     for name, model in models.items():
-        print(f"{name} 튜닝")
+        print(f"- {name} 튜닝")
         if name in params:
             search = GridSearchCV(
                 model, params[name],
@@ -365,14 +367,12 @@ def create_optuna_objective(model_name, X_train, y_train):
 
 
 def optuna_tuning(X_train, y_train, n_trials=30):
-    print("\nOptuna 하이퍼파라미터 튜닝 시작")
-
     optimized_models = {}
     optuna_results = []
     base_models = get_all_models()
 
     for name in base_models.keys():
-        print(f"{name} 최적화")
+        print(f"- {name} 최적화")
         objective = create_optuna_objective(name, X_train, y_train)
         study = optuna.create_study(
             direction="maximize",
@@ -388,7 +388,7 @@ def optuna_tuning(X_train, y_train, n_trials=30):
             'Best Params': str(best_params),
             'Best CV F1': study.best_value
         })
-        print(f"     Best params: {study.best_params_}")
+        print(f"     Best params: {study.best_params}")
         print(f"     Best CV F1: {study.best_value:.4f}")
 
     # Optuna 결과 저장
@@ -423,57 +423,49 @@ def compute_metrics(y_true, y_pred, y_proba=None):
 # ================================
 # Visualization
 # ================================
-def plot_f1_comparison_per_tuning(results_df, tuning_method):
+def plot_f1_comparison(results_df, tuning_method):
     subset = results_df[results_df['Tuning'] == tuning_method]
     subset_sorted = subset.sort_values('F1', ascending=False)
-
     plt.figure(figsize=(10, 6))
-    bars = plt.barh(subset_sorted['Model'], subset_sorted['F1'],
-                    color=sns.color_palette("Set2", len(subset_sorted)))
+    bars = plt.barh(subset_sorted['Model'], subset_sorted['F1'], color=sns.color_palette("Set2", len(subset_sorted)))
 
     for bar, f1 in zip(bars, subset_sorted['F1']):
-        plt.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
-                 f"{f1:.3f}", va="center", fontsize=10)
+        plt.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2, f"{f1:.3f}", va="center", fontsize=10)
 
-    plt.title(f"F1 Scores ({tuning_method.upper()})", fontsize=14, fontweight='bold')
+    plt.title(f"F1 Scores ({tuning_method.upper()})", fontsize=15, fontweight='bold')
     plt.xlabel("F1 Score", fontsize=12)
-    plt.ylabel("Models", fontsize=12)
     plt.xlim(0, max(subset_sorted['F1']) * 1.1)
+    plt.grid(True, axis='x', linestyle='-', alpha=0.5)
     plt.tight_layout()
-    plt.savefig(f'./result/f1_comparison_{tuning_method.lower()}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
-def plot_roc_comparison_per_tuning(results, y_test, tuning_method):
-    plt.figure(figsize=(8, 6))
+def plot_roc_comparison(results, y_test, tuning_method):
+    plt.figure(figsize=(10, 6))
     subset = [r for r in results if r['Tuning'] == tuning_method]
+    colors = sns.color_palette("Set2", len(subset))
 
-    colors = sns.color_palette("tab10", len(subset))
     for i, r in enumerate(subset):
         if r['y_proba'] is not None and len(np.unique(r['y_proba'])) > 1:
             fpr, tpr, _ = roc_curve(y_test, r['y_proba'])
-            plt.plot(fpr, tpr, label=f"{r['Model']} (AUC={r['AUC']:.3f})",
-                     color=colors[i], linewidth=2)
+            plt.plot(fpr, tpr, label=f"{r['Model']} (AUC={r['AUC']:.3f})", color=colors[i], linewidth=2)
 
-    plt.plot([0, 1], [0, 1], 'k--', linewidth=1, alpha=0.7, label='Random')
-    plt.title(f"ROC Curves ({tuning_method.upper()})", fontsize=14, fontweight='bold')
+    plt.plot([0, 1], [0, 1], 'k--', linewidth=1)
+    plt.title(f"ROC Curves ({tuning_method.upper()})", fontsize=15, fontweight='bold')
     plt.xlabel("False Positive Rate", fontsize=12)
     plt.ylabel("True Positive Rate", fontsize=12)
-    plt.legend(loc="lower right")
-    plt.grid(True, alpha=0.3)
+    plt.legend(loc='lower right', frameon=True)
+    plt.grid(True, linestyle='-', alpha=0.5)
     plt.tight_layout()
-    plt.savefig(f'./result/roc_curves_{tuning_method.lower()}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
 def plot_comprehensive_comparison(results_df):
-    """모든 튜닝 방법의 F1과 AUC를 한 번에 비교"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 6))
 
     # F1 Score 비교
     tuning_methods = results_df['Tuning'].unique()
     models = results_df['Model'].unique()
-
     x = np.arange(len(models))
     width = 0.25
 
@@ -482,13 +474,12 @@ def plot_comprehensive_comparison(results_df):
         f1_scores = [subset.loc[model, 'F1'] if model in subset.index else 0 for model in models]
         ax1.bar(x + i * width, f1_scores, width, label=tuning.upper(), alpha=0.8)
 
-    ax1.set_xlabel('Models')
     ax1.set_ylabel('F1 Score')
     ax1.set_title('F1 Score Comparison by Tuning Method')
     ax1.set_xticks(x + width)
     ax1.set_xticklabels(models, rotation=45, ha='right')
     ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    ax1.grid(True, linestyle='-', alpha=0.5)
 
     # AUC 비교
     for i, tuning in enumerate(tuning_methods):
@@ -496,16 +487,13 @@ def plot_comprehensive_comparison(results_df):
         auc_scores = [subset.loc[model, 'AUC'] if model in subset.index else 0 for model in models]
         ax2.bar(x + i * width, auc_scores, width, label=tuning.upper(), alpha=0.8)
 
-    ax2.set_xlabel('Models')
     ax2.set_ylabel('AUC Score')
     ax2.set_title('AUC Score Comparison by Tuning Method')
     ax2.set_xticks(x + width)
     ax2.set_xticklabels(models, rotation=45, ha='right')
     ax2.legend()
-    ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig('./result/comprehensive_comparison.png', dpi=300, bbox_inches='tight')
+    ax2.grid(True, linestyle='-', alpha=0.5)
+    fig.tight_layout()
     plt.show()
 
 
@@ -528,9 +516,9 @@ def save_results_by_tuning(results_df, y_test):
         subset.to_excel(f'./result/results_{tuning.upper()}.xlsx', index=False)
         print(f"   {tuning.upper()} 결과 저장: ./result/results_{tuning.upper()}.xlsx")
 
-        # 개별 시각화
-        plot_f1_comparison_per_tuning(results_df, tuning)
-        plot_roc_comparison_per_tuning(all_results, y_test, tuning)
+        # f1, ROC 시각화
+        plot_f1_comparison(results_df, tuning)
+        plot_roc_comparison(all_results, y_test, tuning)
 
     # 통합 비교 시각화
     plot_comprehensive_comparison(results_df)
@@ -581,7 +569,7 @@ def run_all():
                 model.fit(X_train[selected_features], y_train)
 
         # 모델 평가
-        print(f"\n📊 {tuning_method.upper()} 모델 평가")
+        print(f"📊 {tuning_method.upper()} 모델 평가")
         for name, model in models.items():
             try:
                 preds = model.predict(X_test[selected_features])
@@ -607,8 +595,7 @@ def run_all():
                 }
                 all_results.append(result)
 
-                print(
-                    f"   {name:20s} | F1: {metrics['F1']:.4f} | AUC: {metrics['AUC']:.4f} | Acc: {metrics['Accuracy']:.4f}")
+                print(f"{name:20s} | F1: {metrics['F1']:.4f} | AUC: {metrics['AUC']:.4f} | Acc: {metrics['Accuracy']:.4f}")
 
             except Exception as e:
                 print(f"   ❌ {name} 평가 실패: {str(e)}")
@@ -621,7 +608,7 @@ def run_all():
     results_df = pd.DataFrame(all_results)
 
     # 결과 출력
-    print("\n🏅 성능 순위 (F1 Score 기준):")
+    print("\n🏅 성능 순위 (F1 Score 기준)")
     display_df = results_df[['Tuning', 'Model', 'F1', 'AUC', 'Accuracy']].sort_values('F1', ascending=False)
     print(display_df.to_string(index=False, float_format='%.4f'))
 
@@ -629,7 +616,6 @@ def run_all():
     save_results_by_tuning(results_df, y_test)
 
     print(f"\n✅ 모든 작업 완료!")
-    print(f"📁 결과 파일들이 './result/' 폴더에 저장되었습니다.")
 
 
 if __name__ == "__main__":
