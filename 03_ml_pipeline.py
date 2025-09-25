@@ -31,6 +31,7 @@ from optuna.pruners import MedianPruner
 # ================================
 warnings.filterwarnings('ignore')
 RANDOM_STATE = 42
+GLOBAL_CV = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
 
 class TuningMethod:
     DEFAULT = "default"
@@ -250,7 +251,6 @@ def get_grid_search_params():
 
 
 def grid_search_tuning(X_train, y_train):
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
     tuned = {}
     params = get_grid_search_params()
     models = get_all_models()
@@ -258,7 +258,7 @@ def grid_search_tuning(X_train, y_train):
     for name, model in models.items():
         print(f"- {name} 튜닝")
         if name in params:
-            search = GridSearchCV(model, params[name], cv=cv, scoring='accuracy', n_jobs=-1, verbose=0)
+            search = GridSearchCV(model, params[name], cv=GLOBAL_CV, scoring='accuracy', n_jobs=-1, verbose=0)
             search.fit(X_train, y_train)
             tuned[name] = search.best_estimator_
             print(f"     Best params: {search.best_params_}")
@@ -273,10 +273,8 @@ def grid_search_tuning(X_train, y_train):
 # Optuna
 # ================================
 def create_optuna_objective(model_name, X_train, y_train):
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
-
     def run_cv(pipeline):
-        return cross_val_score(pipeline, X_train, y_train, cv=cv, scoring='accuracy', n_jobs=-1).mean()
+        return cross_val_score(pipeline, X_train, y_train, cv=GLOBAL_CV, scoring='accuracy', n_jobs=-1).mean()
 
     def objective(trial):
         if model_name == "Logistic Regression":
@@ -367,13 +365,16 @@ def optuna_tuning(X_train, y_train, n_trials=30):
 
     for name in base_models.keys():
         print(f"- {name} 최적화")
+
         objective = create_optuna_objective(name, X_train, y_train)
         study = optuna.create_study(direction="maximize", sampler=TPESampler(seed=RANDOM_STATE), pruner=MedianPruner())
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
-
         best_params = study.best_params
-        optimized_models[name] = base_models[name].set_params(**best_params)
+        best_model = base_models[name].set_params(**best_params)
+        best_model.fit(X_train, y_train)
+        optimized_models[name] = best_model
         optuna_results.append({'Model': name, 'Best Params': str(best_params), 'Best CV Accuracy': study.best_value})
+
         print(f"     Best params: {study.best_params}")
         print(f"     Best CV Accuracy: {study.best_value:.4f}")
 
@@ -550,10 +551,9 @@ def run_all():
         if tuning_method == TuningMethod.DEFAULT:
             models = get_all_models()
             tuned_models = {}
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
             for name, model in models.items():
                 print(f"- {name} CV 평가")
-                scores = cross_val_score(model, X_train_selected, y_train, cv=cv, scoring='accuracy', n_jobs=-1)
+                scores = cross_val_score(model, X_train_selected, y_train, cv=GLOBAL_CV, scoring='accuracy', n_jobs=-1)
                 print(f"     CV Accuracy: {scores.mean():.4f} (±{scores.std():.4f})")
                 model.fit(X_train_selected, y_train)
                 tuned_models[name] = model
@@ -564,8 +564,6 @@ def run_all():
 
         elif tuning_method == TuningMethod.OPTUNA:
             models = optuna_tuning(X_train_selected, y_train, n_trials=30)
-            for name, model in models.items():
-                model.fit(X_train_selected, y_train)
 
         # 최종 테스트 평가
         print(f"\n📊 {tuning_method.upper()} 최종 테스트 평가:")
