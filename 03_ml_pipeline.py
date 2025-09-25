@@ -77,7 +77,7 @@ def feature_selection(X, y, final_k=50):
     # 1단계: 분산 필터링
     print("1. 분산 필터링 (Variance Threshold)")
     variances = X.var()
-    low_var_threshold = 0.001  # 매우 낮은 임계값
+    low_var_threshold = 0.001
     low_variance_features = variances[variances <= low_var_threshold].index.tolist()
     remaining_features = [col for col in X.columns if col not in low_variance_features]
     X_filtered = X[remaining_features]
@@ -87,7 +87,7 @@ def feature_selection(X, y, final_k=50):
 
     # 2단계: 상관관계 필터링 (0.9 이상 제거)
     print("\n2. 상관관계 필터링 (Pearson Correlation)")
-    corr_threshold = 0.90  # 높은 임계값으로 설정
+    corr_threshold = 0.90
     corr_matrix = X_filtered.corr().abs()
     upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     highly_corr_features = [column for column in upper_triangle.columns if any(upper_triangle[column] > corr_threshold)]
@@ -96,7 +96,7 @@ def feature_selection(X, y, final_k=50):
     print(f"   제거된 높은 상관관계 특성: {len(highly_corr_features)}개")
     print(f"   남은 특성: {len(remaining_features)}개")
 
-    # 3단계: ANOVA F-test로 1차 선별 (final_k의 2배까지)
+    # 3단계: ANOVA F-test로 1차 선별
     intermediate_k = min(final_k * 2, len(remaining_features))
     if len(remaining_features) > intermediate_k:
         print(f"\n3. ANOVA F-test로 1차 선별 ({intermediate_k}개)")
@@ -116,7 +116,7 @@ def feature_selection(X, y, final_k=50):
     if len(remaining_features) > final_k:
         print(f"\n4. Mutual Information으로 최종 선별 ({final_k}개)")
 
-        selector_mi = SelectKBest(score_func=lambda X, y: mutual_info_classif(X, y, random_state=RANDOM_STATE),k=final_k)
+        selector_mi = SelectKBest(score_func=lambda X, y: mutual_info_classif(X, y, random_state=RANDOM_STATE), k=final_k)
         selector_mi.fit(X_filtered, y)
         final_features = X_filtered.columns[selector_mi.get_support()].tolist()
         mi_scores = selector_mi.scores_[selector_mi.get_support()]
@@ -136,7 +136,7 @@ def feature_selection(X, y, final_k=50):
         print(f"   ANOVA 1차: {len(X_filtered.columns):4d}개")
     print(f"   최종 선택: {len(final_features):4d}개")
     print(f"   감소율: {((original_features - len(final_features)) / original_features * 100):5.1f}%")
-    print("\n ✅ 선택 방법: 분산 → 상관관계 → ANOVA F-test → Mutual Information")
+    print("\n✅ 선택 방법: 분산 → 상관관계 → ANOVA F-test → Mutual Information")
 
     return final_features
 
@@ -160,37 +160,83 @@ def get_all_models():
     scaling_models = {
         'Logistic Regression': LogisticRegression(
             random_state=RANDOM_STATE,
+            max_iter=1000,
+            solver='lbfgs',
+            C=1.0
         ),
         'K-Neighbors': KNeighborsClassifier(
+            n_neighbors=5,
+            weights='uniform',
+            metric='minkowski',
             n_jobs=-1
         ),
         'Support Vector Machine': SVC(
             random_state=RANDOM_STATE,
-            probability=True
+            probability=True,
+            C=1.0,
+            gamma='scale',
+            kernel='rbf'
         )
     }
     non_scaling_models = {
         'Decision Tree': DecisionTreeClassifier(
-            random_state=RANDOM_STATE
+            random_state=RANDOM_STATE,
+            max_depth=None,
+            min_samples_split=2,
+            min_samples_leaf=1,
+            criterion='gini'
         ),
         'Random Forest': RandomForestClassifier(
             random_state=RANDOM_STATE,
+            n_estimators=100,
+            max_depth=None,
+            min_samples_split=2,
+            min_samples_leaf=1,
+            max_features='sqrt',
+            bootstrap=True,
             n_jobs=-1
         ),
         'LightGBM': LGBMClassifier(
             random_state=RANDOM_STATE,
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=-1,
+            num_leaves=31,
+            subsample=1.0,
+            colsample_bytree=1.0,
+            reg_alpha=0.0,
+            reg_lambda=0.0,
             n_jobs=-1,
-            verbosity=-1
+            verbosity=-1,
+            force_col_wise=True
         ),
         'XGBoost': XGBClassifier(
             random_state=RANDOM_STATE,
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=6,
+            min_child_weight=1,
+            subsample=1.0,
+            colsample_bytree=1.0,
+            reg_alpha=0,
+            reg_lambda=1,
+            eval_metric="logloss",
             n_jobs=-1,
             verbosity=0,
-            eval_metric="logloss"
+            use_label_encoder=False  # 경고 방지
         ),
         'CatBoost': CatBoostClassifier(
             random_state=RANDOM_STATE,
-            verbose=False
+            iterations=100,
+            learning_rate=0.1,
+            depth=6,
+            l2_leaf_reg=3.0,
+            bootstrap_type='Bayesian',
+            bagging_temperature=1.0,
+            od_type='IncToDec',
+            od_wait=20,
+            verbose=False,
+            allow_writing_files=False
         )
     }
 
@@ -421,18 +467,51 @@ def compute_metrics(y_true, y_pred, y_proba=None):
 
 
 # ================================
+# Cross Validation for All Methods
+# ================================
+def evaluate_models_with_cv(models, X_train, y_train, cv_folds=5):
+    """모든 모델에 대해 동일한 교차검증 수행"""
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
+    cv_results = {}
+
+    for name, model in models.items():
+        print(f"- {name} CV 평가")
+
+        # 주요 메트릭들에 대해 교차검증 수행
+        accuracy_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='accuracy', n_jobs=-1)
+        f1_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='f1', n_jobs=-1)
+        auc_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='roc_auc', n_jobs=-1)
+
+        cv_results[name] = {
+            'CV_Accuracy_Mean': accuracy_scores.mean(),
+            'CV_Accuracy_Std': accuracy_scores.std(),
+            'CV_F1_Mean': f1_scores.mean(),
+            'CV_F1_Std': f1_scores.std(),
+            'CV_AUC_Mean': auc_scores.mean(),
+            'CV_AUC_Std': auc_scores.std()
+        }
+
+        print(f"     CV Accuracy: {accuracy_scores.mean():.4f} (±{accuracy_scores.std():.4f})")
+        print(f"     CV F1: {f1_scores.mean():.4f} (±{f1_scores.std():.4f})")
+        print(f"     CV AUC: {auc_scores.mean():.4f} (±{auc_scores.std():.4f})")
+
+    return cv_results
+
+
+# ================================
 # Visualization
 # ================================
 def plot_f1_comparison(results_df, tuning_method):
     subset = results_df[results_df['Tuning'] == tuning_method]
     subset_sorted = subset.sort_values('F1', ascending=False)
+
     plt.figure(figsize=(10, 6))
     bars = plt.barh(subset_sorted['Model'], subset_sorted['F1'], color=sns.color_palette("Set2", len(subset_sorted)))
 
     for bar, f1 in zip(bars, subset_sorted['F1']):
         plt.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2, f"{f1:.3f}", va="center", fontsize=10)
 
-    plt.title(f"F1 Scores ({tuning_method.upper()})", fontsize=15, fontweight='bold')
+    plt.title(f"F1 Scores ({tuning_method.upper()})", fontsize=14, fontweight='bold')
     plt.xlabel("F1 Score", fontsize=12)
     plt.xlim(0, max(subset_sorted['F1']) * 1.1)
     plt.grid(True, axis='x', linestyle='-', alpha=0.5)
@@ -451,21 +530,22 @@ def plot_roc_comparison(results, y_test, tuning_method):
             plt.plot(fpr, tpr, label=f"{r['Model']} (AUC={r['AUC']:.3f})", color=colors[i], linewidth=2)
 
     plt.plot([0, 1], [0, 1], 'k--', linewidth=1)
-    plt.title(f"ROC Curves ({tuning_method.upper()})", fontsize=15, fontweight='bold')
+    plt.title(f"ROC Curves ({tuning_method.upper()})", fontsize=14, fontweight='bold')
     plt.xlabel("False Positive Rate", fontsize=12)
     plt.ylabel("True Positive Rate", fontsize=12)
-    plt.legend(loc='lower right', frameon=True)
+    plt.legend(loc="lower right")
     plt.grid(True, linestyle='-', alpha=0.5)
     plt.tight_layout()
     plt.show()
 
 
 def plot_comprehensive_comparison(results_df):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
 
     # F1 Score 비교
     tuning_methods = results_df['Tuning'].unique()
     models = results_df['Model'].unique()
+
     x = np.arange(len(models))
     width = 0.25
 
@@ -493,7 +573,8 @@ def plot_comprehensive_comparison(results_df):
     ax2.set_xticklabels(models, rotation=45, ha='right')
     ax2.legend()
     ax2.grid(True, linestyle='-', alpha=0.5)
-    fig.tight_layout()
+
+    plt.tight_layout()
     plt.show()
 
 
@@ -534,17 +615,31 @@ def save_results_by_tuning(results_df, y_test):
 # Main
 # ================================
 def run_all():
-    print("🚀 지도학습 머신러닝 분류 파이프라인 시작\n")
+    print("🚀 머신러닝 분류 파이프라인 시작 \n")
 
-    # 데이터 처리
+    # 1. 데이터 로드 및 분할
     df_all, X_train, X_test, y_train, y_test, feature_cols = data_processing()
 
-    # 특성 선택
+    # 클래스 균형 확인
+    class_0_train = (y_train == 0).sum()
+    class_1_train = (y_train == 1).sum()
+    class_0_test = (y_test == 0).sum()
+    class_1_test = (y_test == 1).sum()
+
+    print(f"\n📊 클래스 분포 확인")
+    print(f"   Train: Class 0={class_0_train}개, Class 1={class_1_train}개")
+    print(f"   Test:  Class 0={class_0_test}개, Class 1={class_1_test}개")
+    print(f"   균형도: {min(class_0_train, class_1_train) / max(class_0_train, class_1_train):.3f} (Train)")
+
+    # 2. 특성 선택 (Train 데이터만 사용 - Test 오염 방지)
     selected_features = feature_selection(X_train, y_train, final_k=50)
 
-    all_results = []
+    # Test 데이터에서 동일한 특성만 선택 (정보 유출 없음)
+    X_train_selected = X_train[selected_features]
+    X_test_selected = X_test[selected_features]
 
-    # 각 튜닝 방법별로 실행
+    all_results = []
+    all_cv_results = []
     tuning_methods = [TuningMethod.DEFAULT, TuningMethod.GRID_SEARCH, TuningMethod.OPTUNA]
 
     for tuning_method in tuning_methods:
@@ -552,40 +647,44 @@ def run_all():
         print(f"🎯 {tuning_method.upper()} 실행")
         print(f"{'=' * 60}")
 
-        # Default 학습
+        # 3. 모델 학습 (각 방법별)
         if tuning_method == TuningMethod.DEFAULT:
             models = get_all_models()
-            for name, model in models.items():
-                model.fit(X_train[selected_features], y_train)
 
-        # Grid Search 학습
         elif tuning_method == TuningMethod.GRID_SEARCH:
-            models = grid_search_tuning(X_train[selected_features], y_train)
+            models = grid_search_tuning(X_train_selected, y_train)
 
-        # Optuna 학습
         elif tuning_method == TuningMethod.OPTUNA:
-            models = optuna_tuning(X_train[selected_features], y_train, n_trials=30)
-            for name, model in models.items():
-                model.fit(X_train[selected_features], y_train)
+            models = optuna_tuning(X_train_selected, y_train, n_trials=30)
 
-        # 모델 평가
-        print(f"📊 {tuning_method.upper()} 모델 평가")
+        # 4. 교차검증 평가 (Train 데이터로만, 모든 방법 동일)
+        print(f"📊 {tuning_method.upper()} 교차검증 평가 (5-Fold CV, Train 데이터)")
+        cv_results = evaluate_models_with_cv(models, X_train_selected, y_train, cv_folds=5)
+
+        # CV 결과를 전체 결과에 추가
+        for model_name, cv_scores in cv_results.items():
+            cv_result = {
+                'Tuning': tuning_method,
+                'Model': model_name,
+                **cv_scores
+            }
+            all_cv_results.append(cv_result)
+
+        # 6. 최종 테스트 평가 (Test 데이터, 한 번만)
+        print(f"\n📊 {tuning_method.upper()} 최종 테스트 평가:")
         for name, model in models.items():
             try:
-                preds = model.predict(X_test[selected_features])
+                preds = model.predict(X_test_selected)
 
-                # 확률 예측 (가능한 경우)
                 if hasattr(model, "predict_proba"):
-                    proba = model.predict_proba(X_test[selected_features])[:, 1]
+                    proba = model.predict_proba(X_test_selected)[:, 1]
                 elif hasattr(model, "decision_function"):
-                    proba = model.decision_function(X_test[selected_features])
+                    proba = model.decision_function(X_test_selected)
                 else:
                     proba = None
 
-                # 메트릭 계산
                 metrics = compute_metrics(y_test, preds, proba)
 
-                # 결과 저장
                 result = {
                     'Tuning': tuning_method,
                     'Model': name,
@@ -595,25 +694,43 @@ def run_all():
                 }
                 all_results.append(result)
 
-                print(f"{name:20s} | F1: {metrics['F1']:.4f} | AUC: {metrics['AUC']:.4f} | Acc: {metrics['Accuracy']:.4f}")
+                # 균형 데이터이므로 Accuracy를 주 메트릭으로 출력
+                print(
+                    f"   {name:20s} | Accuracy: {metrics['Accuracy']:.4f} | F1: {metrics['F1']:.4f} | AUC: {metrics['AUC']:.4f}")
 
             except Exception as e:
                 print(f"   ❌ {name} 평가 실패: {str(e)}")
 
-    # 결과 정리 및 저장
+    # 7. 결과 정리 및 저장
     print(f"\n{'=' * 60}")
     print("📈 최종 결과 정리")
     print(f"{'=' * 60}")
 
     results_df = pd.DataFrame(all_results)
+    cv_results_df = pd.DataFrame(all_cv_results)
 
-    # 결과 출력
-    print("\n🏅 성능 순위 (F1 Score 기준)")
-    display_df = results_df[['Tuning', 'Model', 'F1', 'AUC', 'Accuracy']].sort_values('F1', ascending=False)
+    # 균형 데이터이므로 Accuracy 기준으로 순위 출력
+    print(f"\n🏅 교차검증 성능 순위 (CV Accuracy 기준)")
+    cv_display_df = cv_results_df[['Tuning', 'Model', 'CV_Accuracy_Mean', 'CV_F1_Mean', 'CV_AUC_Mean']].sort_values(
+        'CV_Accuracy_Mean', ascending=False)
+    print(cv_display_df.to_string(index=False, float_format='%.4f'))
+
+    print(f"\n🏅 최종 테스트 성능 순위 (Test Accuracy 기준)")
+    display_df = results_df[['Tuning', 'Model', 'Accuracy', 'F1', 'AUC']].sort_values('Accuracy', ascending=False)
     print(display_df.to_string(index=False, float_format='%.4f'))
 
-    # 결과 저장 및 시각화
+    # 8. 결과 저장 및 시각화
     save_results_by_tuning(results_df, y_test)
+
+    # CV 결과도 별도 저장
+    cv_results_df.to_excel('./result/cross_validation_results.xlsx', index=False)
+    print("📊 교차검증 결과 저장: ./result/cross_validation_results.xlsx")
+
+    # 최종 추천 모델 (Test Accuracy 기준)
+    best_model = results_df.sort_values('Accuracy', ascending=False).iloc[0]
+    print(f"\n🏆 최종 추천 모델: {best_model['Model']} ({best_model['Tuning']})")
+    print(f"   Test Accuracy: {best_model['Accuracy']:.4f} ⭐")
+    print(f"   Test F1: {best_model['F1']:.4f} | Test AUC: {best_model['AUC']:.4f}")
 
     print(f"\n✅ 모든 작업 완료!")
 
