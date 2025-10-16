@@ -7,7 +7,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, GridSearchCV
-from sklearn.feature_selection import RFE, RFECV, SelectKBest, f_classif, RFECV
+from sklearn.feature_selection import RFE, RFECV, SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -69,19 +69,12 @@ def data_processing():
 # Feature Selection: ReliefF → Random Forest → SVM-RFE
 # ================================
 def feature_selection(X, y, relieff_threshold=0.01, rf_cumulative_importance=0.95):
-    """
-    3단계 Feature Selection: ReliefF → RandomForest → SVM-RFE
-    - 소량 샘플에서도 안정적으로 작동
-    - 각 단계는 자동 스킵 가능
-    """
     print(f"\n{'=' * 60}")
     print(f"👉 Feature Selection 시작 (3-Stage Adaptive Process)")
     print(f"{'=' * 60}")
 
-    # 1. 숫자형 컬럼만 사용
     X = X.select_dtypes(include=[np.number])
 
-    # 2. 결측치 처리
     if X.isnull().sum().sum() > 0:
         print("⚠️ 결측치 존재 → 중앙값으로 대체")
         X = X.fillna(X.median())
@@ -92,13 +85,11 @@ def feature_selection(X, y, relieff_threshold=0.01, rf_cumulative_importance=0.9
 
     print(f"🔍 샘플 수: {n_samples} / 특성 수: {original_features}")
 
-    # Stage 1: ReliefF
     if n_samples < 3:
         print("⚠️ 샘플 수가 3개 미만이므로 ReliefF 생략")
         return feature_names
 
     print("\n🔹 Stage 1: ReliefF")
-    from skrebate import ReliefF
     relief_k = min(10, n_samples - 1)
     relieff = ReliefF(n_neighbors=relief_k)
     relieff.fit(X.values, y)
@@ -116,9 +107,7 @@ def feature_selection(X, y, relieff_threshold=0.01, rf_cumulative_importance=0.9
 
     X_relieff = X[relieff_features]
 
-    # Stage 2: Random Forest
     print("\n🔹 Stage 2: Random Forest 중요도")
-    from sklearn.ensemble import RandomForestClassifier
     rf_model = RandomForestClassifier(
         n_estimators=100,
         max_depth=None,
@@ -144,12 +133,7 @@ def feature_selection(X, y, relieff_threshold=0.01, rf_cumulative_importance=0.9
         print("⚠️ 특성 수 부족 또는 샘플 수 부족 → SVM-RFE 생략")
         return rf_features
 
-    # Stage 3: SVM-RFE with CV
     print("\n🔹 Stage 3: SVM-RFE with CV (속도 개선)")
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.feature_selection import RFECV
-    from sklearn.model_selection import StratifiedKFold
-
     rfecv = RFECV(
         estimator=LogisticRegression(max_iter=1000, solver='liblinear'),
         step=5,
