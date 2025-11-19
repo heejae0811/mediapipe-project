@@ -30,6 +30,7 @@ from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
 from lime.lime_tabular import LimeTabularExplainer
+import joblib
 
 
 # =====================================================
@@ -396,6 +397,25 @@ def run_xai(best_model, X_train_fs, X_test_fs, selected_features, class_names):
 
 
 # =====================================================
+# 9단계: 베스트 모델 알고리즘 저장
+# =====================================================
+def save_final_artifacts(best_model, scaler, selected_features):
+    print("\n[저장 단계] 모델 / 스케일러 / 피처 저장")
+
+    model_path = "./result/best_model.pkl"
+    scaler_path = "./result/scaler.pkl"
+    features_path = "./result/selected_features.pkl"
+
+    joblib.dump(best_model, model_path)
+    joblib.dump(scaler, scaler_path)
+    joblib.dump(selected_features, features_path)
+
+    print(f"✅ 모델 저장 완료: {model_path}")
+    print(f"✅ 스케일러 저장 완료: {scaler_path}")
+    print(f"✅ 피처 저장 완료: {features_path}")
+
+
+# =====================================================
 # MAIN: 전체 파이프라인 실행
 # =====================================================
 def main():
@@ -438,6 +458,9 @@ def main():
 
     # 8단계: XAI (LIME)
     run_xai(best_model, X_train_fs, X_test_fs, selected_features, class_names)
+
+    # 9단계: 서버 저장
+    save_final_artifacts(best_model, scaler, selected_features)
 
     print("\n🎉 전체 작업 완료! result 폴더를 확인하세요.")
 
