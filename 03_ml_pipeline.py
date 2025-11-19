@@ -1,13 +1,26 @@
+"""
+📚 단계별 머신러닝 파이프라인
+1단계: 데이터 불러오기
+2단계: Train/Test 분리 (8:2)
+3단계: Data Scaling (표준화)
+4단계: Feature Selection (RF 기반 Top-K)
+5단계: 8개 ML 모델 학습 (기본 하이퍼파라미터)
+6단계: ML Evaluation (성능 평가 지표 계산)
+7단계: 엑셀 저장 및 시각화
+8단계: XAI (LIME + SHAP)
+"""
+
 import os
 import glob
 import warnings
+import random
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, GridSearchCV
-from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (confusion_matrix, precision_score, recall_score, f1_score, matthews_corrcoef, roc_auc_score, balanced_accuracy_score, roc_curve, auc)
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -16,607 +29,421 @@ from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
-from sklearn.metrics import (
-    confusion_matrix, classification_report, f1_score, matthews_corrcoef,
-    precision_score, recall_score, roc_auc_score, roc_curve, balanced_accuracy_score
-)
-from sklearn.pipeline import Pipeline
-import optuna
-from optuna.samplers import TPESampler
-from optuna.pruners import MedianPruner
+from lime.lime_tabular import LimeTabularExplainer
 
 
-# ================================
-# Global Variables
-# ================================
-warnings.filterwarnings('ignore')
+# =====================================================
+# 전역 설정
+# =====================================================
 RANDOM_STATE = 42
-GLOBAL_CV = StratifiedKFold(n_splits=3, shuffle=True, random_state=RANDOM_STATE)
+np.random.seed(RANDOM_STATE)
+random.seed(RANDOM_STATE)
 
-class TuningMethod:
-    DEFAULT = "default"
-    GRID_SEARCH = "grid"
-    OPTUNA = "optuna"
+RESULT_DIR = "./result"
+os.makedirs(RESULT_DIR, exist_ok=True)
+
+warnings.filterwarnings("ignore")
 
 
-# ================================
-# Data Processing
-# ================================
-def data_processing():
-    files = glob.glob('./features_xlsx/*.xlsx')
-    print(f"📂 분석할 파일 수: {len(files)}개")
+# =====================================================
+# 1단계: 데이터 불러오기
+# =====================================================
+def load_data():
+    print("\n[1단계] 데이터 불러오기")
 
-    if not files:
-        raise FileNotFoundError("경로에 파일이 없습니다.")
+    files = glob.glob("./features_xlsx/*.xlsx")
+    print(f"찾은 파일 수: {len(files)}")
 
-    df_all = pd.concat([pd.read_excel(file, sheet_name=4) for file in files], ignore_index=True)
-    print(f"컬럼 수: {df_all.shape[1]}개")
-    print(f"결측치 개수: {df_all.isnull().sum().sum()}개")
+    if len(files) == 0:
+        raise FileNotFoundError("❌ features_xlsx 폴더에 엑셀 파일이 없습니다.")
 
-    y_all = LabelEncoder().fit_transform(df_all['label'])
-    print(f"라벨 분포: 0 - {(y_all == 0).sum()}개 / 1 - {(y_all == 1).sum()}개")
+    # 여러 개의 엑셀 파일을 하나로 합치기
+    df_list = [pd.read_excel(f, sheet_name=0) for f in files]
+    df = pd.concat(df_list, ignore_index=True)
 
-    feature_cols = df_all.select_dtypes(include=['float64', 'int64']).columns.drop('label', errors='ignore')
-    raw_features = df_all[feature_cols]
+    # label 인코딩 (문자 → 0/1)
+    le = LabelEncoder()
+    y = le.fit_transform(df["label"])
+    class_names = list(le.classes_)
+    print(f"클래스 분포: {dict(zip(class_names, np.bincount(y)))}")
+
+    # 숫자형 feature만 사용 (label은 제외)
+    feature_cols = df.select_dtypes(include=["float64", "int64"]).columns
+    feature_cols = feature_cols.drop("label", errors="ignore")
+    X = df[feature_cols]
+
+    print(f"Feature 개수: {len(feature_cols)}")
+    print(f"결측치 개수: {X.isnull().sum().sum()}")
+
+    return X, y, list(feature_cols), class_names
+
+
+# =====================================================
+# 2단계: Train/Test 분리
+# =====================================================
+def split_data(X, y, test_size=0.2):
+    print("\n[2단계] Train/Test 분리 (8:2)")
+
     X_train, X_test, y_train, y_test = train_test_split(
-        raw_features, y_all, test_size=0.2, stratify=y_all, random_state=RANDOM_STATE
+        X,
+        y,
+        test_size=test_size,
+        stratify=y,
+        random_state=RANDOM_STATE
     )
 
-    return df_all, X_train, X_test, y_train, y_test, feature_cols
+    print(f"Train 샘플 수: {len(X_train)}")
+    print(f"Test 샘플 수:  {len(X_test)}")
+    print(f"Train 클래스 분포: {np.bincount(y_train)}")
+    print(f"Test  클래스 분포: {np.bincount(y_test)}")
+
+    return X_train, X_test, y_train, y_test
 
 
-# ================================
-# Feature Selection: filter + embedded
-# ================================
-def feature_selection(X, y, final_k=50):
-    print(f"\n{'=' * 60}")
-    print(f"👉 Feature Selection 시작")
-    print(f"{'=' * 60}")
+# =====================================================
+# 3단계: Data Scaling
+# =====================================================
+def scale_data(X_train, X_test):
+    print("\n[3단계] Data Scaling")
 
-    original_features = len(X.columns)
+    # 결측치는 각 컬럼의 중앙값으로 채우기
+    X_train_filled = X_train.fillna(X_train.median())
+    X_test_filled = X_test.fillna(X_train.median())  # Train 기준으로 채우기
 
-    # 1단계: 분산 필터링
-    print("1. 분산 필터링 (Variance Threshold)")
-    variances = X.var()
-    low_var_threshold = 0.001
-    low_variance_features = variances[variances <= low_var_threshold].index.tolist()
-    remaining_features = [col for col in X.columns if col not in low_variance_features]
-    X_filtered = X[remaining_features]
+    scaler = StandardScaler()
+    scaler.fit(X_train_filled)
 
-    print(f"   제거된 낮은 분산 특성: {len(low_variance_features)}개")
-    print(f"   남은 특성: {len(remaining_features)}개")
+    X_train_scaled = pd.DataFrame(
+        scaler.transform(X_train_filled),
+        columns=X_train.columns,
+        index=X_train.index
+    )
 
-    # 2단계: 상관관계 필터링 (0.9 이상 제거)
-    print("\n2. 상관관계 필터링 (Pearson Correlation)")
-    corr_threshold = 0.90
-    corr_matrix = X_filtered.corr().abs()
-    upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    highly_corr_features = [column for column in upper_triangle.columns if any(upper_triangle[column] > corr_threshold)]
-    remaining_features = [col for col in remaining_features if col not in highly_corr_features]
-    X_filtered = X_filtered[remaining_features]
-    print(f"   제거된 높은 상관관계 특성: {len(highly_corr_features)}개")
-    print(f"   남은 특성: {len(remaining_features)}개")
+    X_test_scaled = pd.DataFrame(
+        scaler.transform(X_test_filled),
+        columns=X_test.columns,
+        index=X_test.index
+    )
 
-    # 3단계: ANOVA F-test로 1차 선별
-    intermediate_k = min(final_k * 2, len(remaining_features))
-    if len(remaining_features) > intermediate_k:
-        print(f"\n3. ANOVA F-test로 1차 선별 ({intermediate_k}개)")
+    print("Scaling 완료 (평균 0, 표준편차 1 기준)")
 
-        selector_anova = SelectKBest(score_func=f_classif, k=intermediate_k)
-        selector_anova.fit(X_filtered, y)
-
-        anova_features = X_filtered.columns[selector_anova.get_support()].tolist()
-        anova_scores = selector_anova.scores_[selector_anova.get_support()]
-        X_filtered = X_filtered[anova_features]
-
-        print(f"   ANOVA F-test로 선택된 특성: {len(anova_features)}개")
-        print(f"   평균 F-score: {anova_scores.mean():.2f}")
-        remaining_features = anova_features
-
-    # 4단계: Mutual Information으로 최종 선별
-    if len(remaining_features) > final_k:
-        print(f"\n4. Mutual Information으로 최종 선별 ({final_k}개)")
-
-        selector_mi = SelectKBest(score_func=lambda X, y: mutual_info_classif(X, y, random_state=RANDOM_STATE), k=final_k)
-        selector_mi.fit(X_filtered, y)
-        final_features = X_filtered.columns[selector_mi.get_support()].tolist()
-        mi_scores = selector_mi.scores_[selector_mi.get_support()]
-
-        print(f"   Mutual Information으로 최종 선택: {len(final_features)}개")
-        print(f"   평균 MI score: {mi_scores.mean():.3f}")
-    else:
-        final_features = remaining_features
-        print(f"\n4. 이미 목표 특성 수 이하이므로 모든 특성 사용: {len(final_features)}개")
-
-    # 결과 요약
-    print(f"\n📊 특성 선택 요약")
-    print(f"   원본 특성: {original_features:4d}개")
-    print(f"   분산 필터링: {len(X.columns) - len(low_variance_features):4d}개 (제거: {len(low_variance_features)}개)")
-    print(f"   상관관계 필터링: {len(remaining_features) + len(highly_corr_features):4d}개 (제거: {len(highly_corr_features)}개)")
-    if len(X_filtered.columns) != len(final_features):
-        print(f"   ANOVA 1차: {len(X_filtered.columns):4d}개")
-    print(f"   최종 선택: {len(final_features):4d}개")
-    print(f"   감소율: {((original_features - len(final_features)) / original_features * 100):5.1f}%")
-    print("\n✅ 선택 방법: 분산 → 상관관계 → ANOVA F-test → Mutual Information")
-
-    return final_features
+    return X_train_scaled, X_test_scaled, scaler
 
 
-# ================================
-# Pipeline
-# ================================
-def make_pipeline_with_scaler(model, scaling=True):
-    if scaling:
-        scaler = StandardScaler()
-    else:
-        scaler = "passthrough"
+# =====================================================
+# 4단계: Feature Selection (RF 기반 Top-K)
+# =====================================================
+def rf_importance_elbow(X_train, y_train, plot_path=None):
+    """
+    1) RF로 feature importance 계산
+    2) 중요도 내림차순 정렬
+    3) 중요도 차이(derivative) 계산
+    4) 가장 큰 변화량(drop)이 있는 지점 → elbow point = 최적 K
+    """
 
-    return Pipeline([("scaler", scaler), ("model", model)])
+    print("\n[4단계] Feature Selection")
+
+    rf = RandomForestClassifier(n_estimators=600, random_state=42, n_jobs=-1)
+    rf.fit(X_train, y_train)
+
+    importances = rf.feature_importances_
+    idx_sorted = np.argsort(importances)[::-1]
+
+    sorted_imp = importances[idx_sorted]
+    sorted_feat = X_train.columns[idx_sorted]
+
+    # 기울기(변화량) 계산
+    diffs = np.diff(sorted_imp)
+
+    # 가장 크게 떨어진 지점 = elbow
+    elbow_k = np.argmin(diffs) + 1
+    elbow_k = max(3, elbow_k)  # 최소 3개 이상 보장
+
+    selected_features = list(sorted_feat[:elbow_k])
+
+    # Plot 저장
+    if plot_path:
+        plt.figure(figsize=(7, 5))
+        plt.plot(sorted_imp, marker="o")
+        plt.axvline(elbow_k, color="red", linestyle="--", label=f"Elbow K={elbow_k}")
+        plt.title("Random Forest Feature Importance Curve")
+        plt.xlabel("Feature Rank")
+        plt.ylabel("Importance")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=300)
+        plt.close()
+
+    return selected_features, sorted_feat, sorted_imp, elbow_k
 
 
-# ================================
-# ML Models
-# ================================
-def get_all_models():
-    scaling_models = {
-        'Logistic Regression': LogisticRegression(
-            random_state=RANDOM_STATE,
-            max_iter=1000
-        ),
-        'K-Neighbors': KNeighborsClassifier(
-            n_jobs=-1
-        ),
-        'Support Vector Machine': SVC(
-            random_state=RANDOM_STATE,
-            probability=True
-        )
-    }
-    non_scaling_models = {
-        'Decision Tree': DecisionTreeClassifier(
+# =====================================================
+# 5단계: 8개 ML 모델 정의 (기본 하이퍼파라미터)
+# =====================================================
+def get_models():
+    print("\n[5단계] ML 모델 생성")
+
+    models = {
+        "Logistic Regression": LogisticRegression(
+            max_iter=1000,
             random_state=RANDOM_STATE
         ),
-        'Random Forest': RandomForestClassifier(
+        "KNN": KNeighborsClassifier(),
+        "SVM": SVC(
+            probability=True,
+            random_state=RANDOM_STATE
+        ),
+        "Decision Tree": DecisionTreeClassifier(
+            random_state=RANDOM_STATE
+        ),
+        "Random Forest": RandomForestClassifier(
+            random_state=RANDOM_STATE,
+            n_estimators=200,
+            n_jobs=-1
+        ),
+        "LightGBM": LGBMClassifier(
             random_state=RANDOM_STATE,
             n_jobs=-1
         ),
-        'LightGBM': LGBMClassifier(
+        "XGBoost": XGBClassifier(
             random_state=RANDOM_STATE,
+            eval_metric="logloss",
             n_jobs=-1,
-            verbosity=-1
+            use_label_encoder=False
         ),
-        'XGBoost': XGBClassifier(
-            random_state=RANDOM_STATE,
-            n_jobs=-1,
-            verbosity=0
-        ),
-        'CatBoost': CatBoostClassifier(
+        "CatBoost": CatBoostClassifier(
             random_state=RANDOM_STATE,
             verbose=False
-        )
+        ),
     }
 
-    models = {}
-    for name, model in scaling_models.items():
-        models[name] = make_pipeline_with_scaler(model, scaling=True)
-    for name, model in non_scaling_models.items():
-        models[name] = make_pipeline_with_scaler(model, scaling=False)
-
+    print(f"모델 개수: {len(models)}개")
     return models
 
 
-# ================================
-# GridSearch Parameters
-# ================================
-def get_grid_search_params():
-    return {
-        'Logistic Regression': {
-            'model__C': [0.01, 0.1, 1, 10, 100],
-            'model__solver': ['liblinear', 'lbfgs'],
-        },
-        'K-Neighbors': {
-            'model__n_neighbors': [3, 5, 7, 11, 15],
-            'model__weights': ['uniform', 'distance']
-        },
-        'Support Vector Machine': {
-            'model__C': [0.1, 1, 10],
-            'model__kernel': ['rbf', 'linear'],
-            'model__gamma': ['scale', 'auto']
-        },
-        'Decision Tree': {
-            'model__max_depth': [3, 5, 10, None],
-            'model__min_samples_split': [2, 5, 10],
-            'model__criterion': ['gini', 'entropy']
-        },
-        'Random Forest': {
-            'model__n_estimators': [50, 100, 200],
-            'model__max_depth': [5, 10, None],
-            'model__min_samples_split': [2, 5]
-        },
-        'LightGBM': {
-            'model__n_estimators': [50, 100, 200],
-            'model__learning_rate': [0.05, 0.1, 0.2],
-            'model__max_depth': [3, 5, 7]
-        },
-        'XGBoost': {
-            'model__n_estimators': [50, 100, 200],
-            'model__learning_rate': [0.05, 0.1, 0.2],
-            'model__max_depth': [3, 5, 7]
-        },
-        'CatBoost': {
-            'model__iterations': [50, 100, 200],
-            'model__learning_rate': [0.05, 0.1, 0.2],
-            'model__depth': [3, 4, 5]
-        }
-    }
+# =====================================================
+# 6단계: 모델 학습 + 평가
+# =====================================================
+def evaluate_models(models, X_train, y_train, X_test, y_test):
+    print("\n[6단계] 모델 학습 및 평가")
 
-
-def grid_search_tuning(X_train, y_train):
-    tuned = {}
-    params = get_grid_search_params()
-    models = get_all_models()
+    results_list = []
+    y_proba_dict = {}
+    model_objects = {}
 
     for name, model in models.items():
-        print(f"- {name} 튜닝")
-        if name in params:
-            search = GridSearchCV(model, params[name], cv=GLOBAL_CV, scoring='accuracy', n_jobs=-1, verbose=0)
-            search.fit(X_train, y_train)
-            tuned[name] = search.best_estimator_
-            print(f"     Best params: {search.best_params_}")
-            print(f"     Best CV Accuracy: {search.best_score_:.4f}")
-        else:
-            tuned[name] = model.fit(X_train, y_train)
+        print(f"\n⚡ Training: {name}")
 
-    return tuned
+        # 1) 모델 학습
+        model.fit(X_train, y_train)
 
+        # 2) 예측 (라벨, 확률)
+        y_pred = model.predict(X_test)
+        # 이진분류라고 가정하고, 양성 클래스(1)의 확률만 사용
+        y_proba = model.predict_proba(X_test)[:, 1]
 
-# ================================
-# Optuna
-# ================================
-def create_optuna_objective(model_name, X_train, y_train):
-    def run_cv(pipeline):
-        return cross_val_score(pipeline, X_train, y_train, cv=GLOBAL_CV, scoring='accuracy', n_jobs=-1).mean()
+        # 3) 성능 지표 계산
+        cm = confusion_matrix(y_test, y_pred)
+        tn, fp, fn, tp = cm.ravel()
 
-    def objective(trial):
-        if model_name == "Logistic Regression":
-            model = LogisticRegression(random_state=RANDOM_STATE, max_iter=1000)
-            params = {
-                "model__C": trial.suggest_float("model__C", 0.001, 100, log=True),
-                "model__solver": trial.suggest_categorical("model__solver", ["liblinear", "lbfgs"])
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=True).set_params(**params)
+        accuracy = (y_pred == y_test).mean()
+        precision = precision_score(y_test, y_pred, zero_division=0)
+        recall = recall_score(y_test, y_pred, zero_division=0)  # sensitivity
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        bal_acc = balanced_accuracy_score(y_test, y_pred)
+        mcc = matthews_corrcoef(y_test, y_pred)
+        auc_score = roc_auc_score(y_test, y_proba)
 
-        elif model_name == "K-Neighbors":
-            model = KNeighborsClassifier(n_jobs=-1)
-            params = {
-                "model__n_neighbors": trial.suggest_int("model__n_neighbors", 3, 15),
-                "model__weights": trial.suggest_categorical("model__weights", ["uniform", "distance"])
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=True).set_params(**params)
+        result = {
+            "Model": name,
+            "Accuracy": accuracy,
+            "Precision": precision,
+            "Recall": recall,
+            "F1": f1,
+            "Specificity": specificity,
+            "Sensitivity": sensitivity,
+            "Balanced_Accuracy": bal_acc,
+            "MCC": mcc,
+            "AUC": auc_score
+        }
+        results_list.append(result)
 
-        elif model_name == "Support Vector Machine":
-            model = SVC(random_state=RANDOM_STATE, probability=True)
-            params = {
-                "model__C": trial.suggest_float("model__C", 0.01, 100, log=True),
-                "model__kernel": trial.suggest_categorical("model__kernel", ["linear", "rbf"])
-            }
-            if params["model__kernel"] == "rbf":
-                params["model__gamma"] = trial.suggest_categorical("model__gamma", ["scale", "auto"])
-            pipeline = make_pipeline_with_scaler(model, scaling=True).set_params(**params)
+        y_proba_dict[name] = y_proba
+        model_objects[name] = model
 
-        elif model_name == "Decision Tree":
-            model = DecisionTreeClassifier(random_state=RANDOM_STATE)
-            params = {
-                "model__max_depth": trial.suggest_categorical("model__max_depth", [3, 5, 10, None]),
-                "model__min_samples_split": trial.suggest_int("model__min_samples_split", 2, 10),
-                "model__criterion": trial.suggest_categorical("model__criterion", ["gini", "entropy"])
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=False).set_params(**params)
+        print(f"   - Accuracy: {accuracy:.3f}, F1: {f1:.3f}, MCC: {mcc:.3f}, AUC: {auc_score:.3f}")
 
-        elif model_name == "Random Forest":
-            model = RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)
-            params = {
-                "model__n_estimators": trial.suggest_int("model__n_estimators", 50, 300),
-                "model__max_depth": trial.suggest_categorical("model__max_depth", [5, 10, None]),
-                "model__min_samples_split": trial.suggest_int("model__min_samples_split", 2, 5)
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=False).set_params(**params)
+    # MCC 기준으로 Best Model 선정
+    df_results = pd.DataFrame(results_list)
+    best_idx = df_results["MCC"].idxmax()
+    best_model_name = df_results.loc[best_idx, "Model"]
+    best_model = model_objects[best_model_name]
 
-        elif model_name == "LightGBM":
-            model = LGBMClassifier(random_state=RANDOM_STATE, n_jobs=-1, verbosity=-1)
-            params = {
-                "model__n_estimators": trial.suggest_int("model__n_estimators", 50, 300),
-                "model__learning_rate": trial.suggest_float("model__learning_rate", 0.01, 0.3),
-                "model__num_leaves": trial.suggest_int("model__num_leaves", 15, 63),
-                "model__max_depth": trial.suggest_int("model__max_depth", 3, 7)
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=False).set_params(**params)
+    print(f"\n✅ Best Model (MCC 기준): {best_model_name}")
 
-        elif model_name == "XGBoost":
-            model = XGBClassifier(random_state=RANDOM_STATE, n_jobs=-1, verbosity=0)
-            params = {
-                "model__n_estimators": trial.suggest_int("model__n_estimators", 50, 300),
-                "model__learning_rate": trial.suggest_float("model__learning_rate", 0.01, 0.3),
-                "model__max_depth": trial.suggest_int("model__max_depth", 3, 7),
-                "model__subsample": trial.suggest_float("model__subsample", 0.6, 1.0)
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=False).set_params(**params)
-
-        elif model_name == "CatBoost":
-            model = CatBoostClassifier(random_state=RANDOM_STATE, verbose=False)
-            params = {
-                "model__depth": trial.suggest_int("model__depth", 4, 10),
-                "model__iterations": trial.suggest_int("model__iterations", 50, 300),
-                "model__learning_rate": trial.suggest_float("model__learning_rate", 0.01, 0.3)
-            }
-            pipeline = make_pipeline_with_scaler(model, scaling=False).set_params(**params)
-
-        else:
-            raise ValueError(f"지원하지 않는 모델: {model_name}")
-
-        return run_cv(pipeline)
-
-    return objective
+    return results_list, y_proba_dict, best_model_name, best_model
 
 
-def optuna_tuning(X_train, y_train, n_trials=30):
-    optimized_models = {}
-    optuna_results = []
-    base_models = get_all_models()
+# =====================================================
+# 7단계: 엑셀 저장 및 시각화
+# =====================================================
+def save_results_and_plots(results_list, y_test, y_proba_dict, best_model_name, best_model, X_test_fs, selected_features, class_names):
+    print("\n[7단계] 엑셀 저장 및 시각화")
 
-    for name in base_models.keys():
-        print(f"- {name} 최적화")
+    df_results = pd.DataFrame(results_list)
+    df_results_sorted = df_results.sort_values("MCC", ascending=False)
 
-        objective = create_optuna_objective(name, X_train, y_train)
-        study = optuna.create_study(direction="maximize", sampler=TPESampler(seed=RANDOM_STATE), pruner=MedianPruner())
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
-        best_params = study.best_params
-        best_model = base_models[name].set_params(**best_params)
-        best_model.fit(X_train, y_train)
-        optimized_models[name] = best_model
-        optuna_results.append({'Model': name, 'Best Params': str(best_params), 'Best CV Accuracy': study.best_value})
+    # 1) 엑셀 저장
+    excel_path = os.path.join(RESULT_DIR, "final_results.xlsx")
+    df_results_sorted.to_excel(excel_path, index=False)
+    print(f"성능 지표 엑셀 저장 완료: {excel_path}")
 
-        print(f"     Best params: {study.best_params}")
-        print(f"     Best CV Accuracy: {study.best_value:.4f}")
+    # 2) Confusion Matrix (Best Model)
+    y_pred_best = best_model.predict(X_test_fs)
+    cm = confusion_matrix(y_test, y_pred_best)
 
-    os.makedirs('./result', exist_ok=True)
-    pd.DataFrame(optuna_results).to_excel('./result/results_optuna_details.xlsx', index=False)
-    print("   Optuna 세부 결과 저장: ./result/results_optuna_details.xlsx")
-
-    return optimized_models
-
-
-# ================================
-# ML Evaluation
-# ================================
-def compute_metrics(y_true, y_pred, y_proba=None):
-    cm = confusion_matrix(y_true, y_pred)
-    tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-
-    metrics = {
-        'Accuracy': (y_true == y_pred).mean(),
-        'Precision': precision_score(y_true, y_pred, zero_division=0),
-        'Recall': recall_score(y_true, y_pred, zero_division=0),
-        'F1': f1_score(y_true, y_pred, zero_division=0),
-        'Balanced_Accuracy': balanced_accuracy_score(y_true, y_pred),
-        'Specificity': tn / (tn + fp) if (tn + fp) > 0 else 0,
-        'Sensitivity': tp / (tp + fn) if (tp + fn) > 0 else 0,
-        'MCC': matthews_corrcoef(y_true, y_pred),
-        'AUC': roc_auc_score(y_true, y_proba) if y_proba is not None else 0
-    }
-    return metrics
-
-
-# ================================
-# Visualization
-# ================================
-def plot_f1_comparison(results_df, tuning_method):
-    subset = results_df[results_df['Tuning'] == tuning_method].sort_values('F1', ascending=False)
-
-    plt.figure(figsize=(10, 6))
-    bars = plt.barh(subset['Model'], subset['F1'], color=sns.color_palette("Set2", len(subset)))
-
-    for bar, f1 in zip(bars, subset['F1']):
-        plt.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2, f"{f1:.3f}", va="center", fontsize=10)
-
-    plt.title(f"F1 Scores ({tuning_method.upper()})", fontsize=14, fontweight='bold')
-    plt.xlabel("F1 Score", fontsize=12)
-    plt.xlim(0, max(subset['F1']) * 1.1)
-    plt.grid(True, axis='x', linestyle='-', alpha=0.5)
+    plt.figure(figsize=(7, 5))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
+    plt.title(f"Confusion Matrix - {best_model_name}")
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
     plt.tight_layout()
-    plt.show()
+    cm_path = os.path.join(RESULT_DIR, "confusion_matrix_best.png")
+    plt.savefig(cm_path, dpi=300)
+    plt.close()
+    print(f"Confusion Matrix 저장: {cm_path}")
 
+    # 3) ROC Curve (모든 모델 비교)
+    plt.figure(figsize=(7, 6))
+    for name, y_proba in y_proba_dict.items():
+        fpr, tpr, _ = roc_curve(y_test, y_proba)
+        roc_auc = auc(fpr, tpr)
+        plt.plot(fpr, tpr, lw=2, label=f"{name} (AUC={roc_auc:.3f})")
 
-def plot_roc_comparison(results, y_test, tuning_method):
-    plt.figure(figsize=(10, 6))
-    subset = [r for r in results if r['Tuning'] == tuning_method]
-    colors = sns.color_palette("Set2", len(subset))
-
-    for i, r in enumerate(subset):
-        if r['y_proba'] is not None and len(np.unique(r['y_proba'])) > 1:
-            fpr, tpr, _ = roc_curve(y_test, r['y_proba'])
-            plt.plot(fpr, tpr, label=f"{r['Model']} (AUC={r['AUC']:.3f})", color=colors[i], linewidth=2)
-
-    plt.plot([0, 1], [0, 1], 'k--', linewidth=1)
-    plt.title(f"ROC Curves ({tuning_method.upper()})", fontsize=14, fontweight='bold')
-    plt.xlabel("False Positive Rate", fontsize=12)
-    plt.ylabel("True Positive Rate", fontsize=12)
-    plt.legend(loc="lower right")
-    plt.grid(True, linestyle='-', alpha=0.5)
+    plt.plot([0, 1], [0, 1], "k--", label="Random")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve Comparison (All Models)")
+    plt.legend(loc="lower right", fontsize=8)
+    plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.show()
+    roc_all_path = os.path.join(RESULT_DIR, "roc_all_models.png")
+    plt.savefig(roc_all_path, dpi=300)
+    plt.close()
+    print(f"ROC Curve 저장: {roc_all_path}")
+
+    # 4) Feature Importance (지원 안되면 Permutation Importance 사용)
+    if hasattr(best_model, "feature_importances_"):
+        # Tree 모델 Feature Importance
+        importances = best_model.feature_importances_
+        df_fi = pd.DataFrame({
+            "Feature": selected_features,
+            "Importance": importances
+        })
+    else:
+        # Permutation Importance로 대체
+        from sklearn.inspection import permutation_importance
+
+        perm = permutation_importance(
+            best_model,
+            X_test_fs,
+            y_test,
+            scoring="matthews_corrcoef",
+            n_repeats=10,
+            random_state=42
+        )
+        df_fi = pd.DataFrame({
+            "Feature": selected_features,
+            "Importance": perm.importances_mean
+        })
 
 
-def plot_comprehensive_comparison(results_df):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
-    tuning_methods = results_df['Tuning'].unique()
-    models = results_df['Model'].unique()
-    x = np.arange(len(models))
-    width = 0.25
+# =====================================================
+# 8단계: XAI (LIME + SHAP)
+# =====================================================
+def run_xai(best_model, X_train_fs, X_test_fs, selected_features, class_names):
+    """
+    Best Model을 대상으로 LIME, SHAP 실행.
+    - LIME: 개별 샘플에 대한 국소(local) 설명
+    - SHAP: 전체적인(global) feature 중요도 설명 (Tree 기반 모델에서)
+    """
+    print("\n[8단계] XAI (LIME + SHAP) 실행")
 
-    # F1 Score 비교
-    for i, tuning in enumerate(tuning_methods):
-        subset = results_df[results_df['Tuning'] == tuning].set_index('Model')
-        f1_scores = [subset.loc[model, 'F1'] if model in subset.index else 0 for model in models]
-        ax1.bar(x + i * width, f1_scores, width, label=tuning.upper(), alpha=0.8)
+    # ---------- LIME ----------
+    print("LIME 실행 중...")
+    try:
+        explainer = LimeTabularExplainer(
+            training_data=np.array(X_train_fs),
+            feature_names=selected_features,
+            class_names=class_names,
+            mode="classification"
+        )
 
-    ax1.set_ylabel('F1 Score')
-    ax1.set_title('F1 Score Comparison by Tuning Method')
-    ax1.set_xticks(x + width)
-    ax1.set_xticklabels(models, rotation=45, ha='right')
-    ax1.legend()
-    ax1.grid(True, linestyle='-', alpha=0.5)
+        # 첫 번째 테스트 샘플 선택
+        sample = X_test_fs.iloc[0].values
 
-    # AUC 비교
-    for i, tuning in enumerate(tuning_methods):
-        subset = results_df[results_df['Tuning'] == tuning].set_index('Model')
-        auc_scores = [subset.loc[model, 'AUC'] if model in subset.index else 0 for model in models]
-        ax2.bar(x + i * width, auc_scores, width, label=tuning.upper(), alpha=0.8)
+        def predict_fn(x):
+            return best_model.predict_proba(x)
 
-    ax2.set_ylabel('AUC Score')
-    ax2.set_title('AUC Score Comparison by Tuning Method')
-    ax2.set_xticks(x + width)
-    ax2.set_xticklabels(models, rotation=45, ha='right')
-    ax2.legend()
-    ax2.grid(True, linestyle='-', alpha=0.5)
-
-    plt.tight_layout()
-    plt.show()
+        exp = explainer.explain_instance(sample, predict_fn)
+        lime_path = os.path.join(RESULT_DIR, "lime_explanation_best.html")
+        exp.save_to_file(lime_path)
+        print(f"LIME 결과 저장: {lime_path}")
+    except Exception as e:
+        print(f"❌ LIME 실행 실패: {e}")
 
 
-# ================================
-# Save Results
-# ================================
-def save_results_by_tuning(results_df, y_test):
-    os.makedirs('./result', exist_ok=True)
+# =====================================================
+# MAIN: 전체 파이프라인 실행
+# =====================================================
+def main():
+    print("\n============================================")
+    print("🚀 머신러닝 파이프라인 시작")
+    print("============================================")
 
-    # 전체 결과 저장
-    results_df_save = results_df.drop(['y_pred', 'y_proba'], axis=1)
-    results_df_save.to_excel('./result/final_results.xlsx', index=False)
-    print("\n📊 전체 결과 저장: ./result/final_results.xlsx")
+    # 1단계: 데이터 불러오기
+    X, y, feature_names, class_names = load_data()
 
-    # 튜닝별 저장 및 시각화
-    all_results = results_df.to_dict('records')
+    # 2단계: Train/Test 분리
+    X_train, X_test, y_train, y_test = split_data(X, y, test_size=0.2)
 
-    for tuning in results_df['Tuning'].unique():
-        subset = results_df[results_df['Tuning'] == tuning].drop(['y_pred', 'y_proba'], axis=1)
-        subset.to_excel(f'./result/results_{tuning.upper()}.xlsx', index=False)
-        print(f"   {tuning.upper()} 결과 저장: ./result/results_{tuning.upper()}.xlsx")
+    # 3단계: Scaling
+    X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test)
 
-        plot_f1_comparison(results_df, tuning)
-        plot_roc_comparison(all_results, y_test, tuning)
+    # 4단계: Feature Selection (RF Elbow 적용)
+    selected_features, sorted_feat, sorted_imp, K = rf_importance_elbow(
+        X_train_scaled, y_train, "./result/rf_importance_curve.png"
+    )
+    print(f"Selected Feature({K}개): {selected_features}")
 
-    plot_comprehensive_comparison(results_df)
+    X_train_fs = X_train_scaled[selected_features]
+    X_test_fs = X_test_scaled[selected_features]
 
-    # 최고 성능 모델 저장
-    best = results_df.sort_values('Accuracy', ascending=False).iloc[0]
-    best_save = best.drop(['y_pred', 'y_proba'])
-    pd.DataFrame([best_save]).to_excel('./result/best_model.xlsx', index=False)
-    print(f"\n🏆 최고 성능 모델: {best['Model']} ({best['Tuning']}) | Accuracy={best['Accuracy']:.4f} | F1={best['F1']:.4f}")
+    # 5단계: 모델 생성
+    models = get_models()
 
+    # 6단계: 모델 학습 + 평가
+    results_list, y_proba_dict, best_model_name, best_model = evaluate_models(
+        models, X_train_fs, y_train, X_test_fs, y_test
+    )
 
-# ================================
-# Main
-# ================================
-def run_all():
-    print("🚀 머신러닝 분류 파이프라인 시작 \n")
+    # 7단계: 시각화 및 엑셀 저장
+    save_results_and_plots(
+        results_list, y_test, y_proba_dict,
+        best_model_name, best_model,
+        X_test_fs, selected_features, class_names
+    )
 
-    # 데이터 로드 및 분할
-    df_all, X_train, X_test, y_train, y_test, feature_cols = data_processing()
+    # 8단계: XAI (LIME)
+    run_xai(best_model, X_train_fs, X_test_fs, selected_features, class_names)
 
-    # 클래스 균형 확인
-    class_0_train = (y_train == 0).sum()
-    class_1_train = (y_train == 1).sum()
-    class_0_test = (y_test == 0).sum()
-    class_1_test = (y_test == 1).sum()
-
-    print(f"\n📊 클래스 분포 확인")
-    print(f"   Train: Class 0={class_0_train}개, Class 1={class_1_train}개")
-    print(f"   Test:  Class 0={class_0_test}개, Class 1={class_1_test}개")
-    print(f"   균형도: {min(class_0_train, class_1_train) / max(class_0_train, class_1_train):.3f} (Train)")
-
-    # 특성 선택 (Train 데이터만 사용)
-    selected_features = feature_selection(X_train, y_train, final_k=50)
-    X_train_selected = X_train[selected_features]
-    X_test_selected = X_test[selected_features]
-
-    all_results = []
-    tuning_methods = [TuningMethod.DEFAULT, TuningMethod.GRID_SEARCH, TuningMethod.OPTUNA]
-
-    for tuning_method in tuning_methods:
-        print(f"\n{'=' * 60}")
-        print(f"🎯 {tuning_method.upper()} 실행")
-        print(f"{'=' * 60}")
-
-        # 모델 학습 및 교차검증
-        if tuning_method == TuningMethod.DEFAULT:
-            models = get_all_models()
-            tuned_models = {}
-            for name, model in models.items():
-                print(f"- {name} CV 평가")
-                scores = cross_val_score(model, X_train_selected, y_train, cv=GLOBAL_CV, scoring='accuracy', n_jobs=-1)
-                print(f"     CV Accuracy: {scores.mean():.4f} (±{scores.std():.4f})")
-                model.fit(X_train_selected, y_train)
-                tuned_models[name] = model
-            models = tuned_models
-
-        elif tuning_method == TuningMethod.GRID_SEARCH:
-            models = grid_search_tuning(X_train_selected, y_train)
-
-        elif tuning_method == TuningMethod.OPTUNA:
-            models = optuna_tuning(X_train_selected, y_train, n_trials=30)
-
-        # 최종 테스트 평가
-        print(f"\n📊 {tuning_method.upper()} 최종 테스트 평가:")
-        for name, model in models.items():
-            try:
-                preds = model.predict(X_test_selected)
-
-                if hasattr(model, "predict_proba"):
-                    proba = model.predict_proba(X_test_selected)[:, 1]
-                elif hasattr(model, "decision_function"):
-                    proba = model.decision_function(X_test_selected)
-                else:
-                    proba = None
-
-                metrics = compute_metrics(y_test, preds, proba)
-
-                result = {
-                    'Tuning': tuning_method,
-                    'Model': name,
-                    'y_pred': preds,
-                    'y_proba': proba,
-                    **metrics
-                }
-                all_results.append(result)
-
-                print(
-                    f"   {name:20s} | Accuracy: {metrics['Accuracy']:.4f} | F1: {metrics['F1']:.4f} | AUC: {metrics['AUC']:.4f}")
-
-            except Exception as e:
-                print(f"   ❌ {name} 평가 실패: {str(e)}")
-
-    # 결과 정리 및 저장
-    print(f"\n{'=' * 60}")
-    print("📈 최종 결과 정리")
-    print(f"{'=' * 60}")
-
-    results_df = pd.DataFrame(all_results)
-
-    print(f"\n🏅 최종 테스트 성능 순위 (Test Accuracy 기준)")
-    display_df = results_df[['Tuning', 'Model', 'Accuracy', 'F1', 'AUC']].sort_values('Accuracy', ascending=False)
-    print(display_df.to_string(index=False, float_format='%.4f'))
-
-    # 결과 저장 및 시각화
-    save_results_by_tuning(results_df, y_test)
-
-    # 최종 추천 모델
-    best_model = results_df.sort_values('Accuracy', ascending=False).iloc[0]
-    print(f"\n🏆 최종 추천 모델: {best_model['Model']} ({best_model['Tuning']})")
-    print(f"   Test Accuracy: {best_model['Accuracy']:.4f} ⭐")
-    print(f"   Test F1: {best_model['F1']:.4f} | Test AUC: {best_model['AUC']:.4f}")
-
-    print(f"\n✅ 모든 작업 완료!")
+    print("\n🎉 전체 작업 완료! result 폴더를 확인하세요.")
 
 
+# =====================================================
+# 스크립트 실행
+# =====================================================
 if __name__ == "__main__":
-    run_all()
+    main()
