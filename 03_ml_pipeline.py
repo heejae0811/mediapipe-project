@@ -202,7 +202,7 @@ def model_development():
             probability=True,  # 확률 기반 예측 → XAI 용도
             random_state=RANDOM_STATE
         ),
-        # Tree-based models
+        # Tree models
         "Decision Tree": DecisionTreeClassifier(
             random_state=RANDOM_STATE
         ),
@@ -211,7 +211,7 @@ def model_development():
             random_state=RANDOM_STATE,
             n_jobs=-1
         ),
-        # Gradient Boosting Models: 작은 데이터에서도 강력한 성능, 복잡한 패턴 학습에 적합
+        # Gradient boosting models: 작은 데이터에서도 강력한 성능, 복잡한 패턴 학습에 적합
         "LightGBM": LGBMClassifier(
             random_state=RANDOM_STATE,
             n_jobs=-1,
@@ -371,7 +371,7 @@ def run_lime(best_model, X_train_fs, X_test_fs, selected_features, class_names):
 # =====================================================
 # 8단계: 알고리즘 저장
 # =====================================================
-def save_final_artifacts(best_model, scaler, selected_features):
+def save_algorithm(best_model, scaler, selected_features):
     print("\n[8단계] 알고리즘 저장")
 
     model_path = "./result/best_model.pkl"
@@ -388,7 +388,7 @@ def save_final_artifacts(best_model, scaler, selected_features):
 
 
 # =====================================================
-# MAIN: 전체 파이프라인 실행
+# MAIN: 머신러닝 파이프라인
 # =====================================================
 def main():
     print("\n============================================")
@@ -419,7 +419,6 @@ def main():
     print("\n[5단계] 모델 학습 및 쳥가")
 
     for model_name, model in models.items():
-        # Feature Scaling
         X_train_fs, X_test_fs, scaler = feature_scaling(
             X_train, X_test, selected_features, model_name
         )
@@ -439,13 +438,20 @@ def main():
 
     print(f"\n✅ Best Model (MCC 기준): {best_model_name}")
 
+    # 6단계: 엑셀 저장 및 시각화
+    save_results()
+
     # 7단계: XAI (LIME)
     run_lime(best_model, best_X_train_fs, best_X_test_fs, selected_features, class_names)
 
+    # 8단계: 알고리즘 저장
+    save_algorithm()
+
     print("\n🎉 전체 파이프라인 완료!")
 
+
 # =====================================================
-# 스크립트 실행
+# 실행
 # =====================================================
 if __name__ == "__main__":
     main()
