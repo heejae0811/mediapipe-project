@@ -237,8 +237,6 @@ def model_development():
 # 5단계: 모델 학습 및 평가
 # =====================================================
 def model_evaluation(model, X_train, y_train, X_test, y_test, model_name):
-    print(f"⚡ Training: {model_name}")
-
     # 1) 모델 학습
     model.fit(X_train, y_train)
 
@@ -260,9 +258,22 @@ def model_evaluation(model, X_train, y_train, X_test, y_test, model_name):
     mcc = matthews_corrcoef(y_test, y_pred)
     auc_score = roc_auc_score(y_test, y_proba)
 
+    metrics = {
+        "Model": model_name,
+        "Accuracy": accuracy,
+        "Precision": precision,
+        "Recall": recall,
+        "F1": f1,
+        "Specificity": specificity,
+        "Sensitivity": sensitivity,
+        "Balanced_Accuracy": bal_acc,
+        "MCC": mcc,
+        "AUC": auc_score
+    }
+
     print(f"- Accuracy: {accuracy:.3f}, F1: {f1:.3f}, MCC: {mcc:.3f}, AUC: {auc_score:.3f} \n")
 
-    return model, y_pred, y_proba, mcc
+    return model, y_pred, y_proba, mcc, metrics
 
 
 # =====================================================
@@ -342,7 +353,7 @@ def save_results(results_list, y_test, y_proba_dict, best_model_name, best_model
 # =====================================================
 # 7단계: XAI (LIME)
 # =====================================================
-def run_lime(best_model, X_train_fs, X_test_fs, selected_features, class_names):
+def xai_lime(best_model, X_train_fs, X_test_fs, selected_features, class_names):
     print("\n[7단계] XAI (LIME)")
 
     try:
@@ -382,9 +393,9 @@ def save_algorithm(best_model, scaler, selected_features):
     joblib.dump(scaler, scaler_path)
     joblib.dump(selected_features, features_path)
 
-    print(f"✅ 모델 저장 완료: {model_path}")
-    print(f"✅ 스케일러 저장 완료: {scaler_path}")
-    print(f"✅ 피처 저장 완료: {features_path}")
+    print(f"모델 저장 완료: {model_path}")
+    print(f"스케일러 저장 완료: {scaler_path}")
+    print(f"피처 저장 완료: {features_path}")
 
 
 # =====================================================
@@ -414,20 +425,29 @@ def main():
     best_model_name = None
     best_mcc = -1
     best_scaler = None
+    best_X_train_fs = None
+    best_X_test_fs = None
+
+    results_list = []
+    y_proba_dict = {}
 
     # 5단계: 모델 학습 및 평가
-    print("\n[5단계] 모델 학습 및 쳥가")
+    print("\n[5단계] 모델 학습 및 평가")
 
     for model_name, model in models.items():
         X_train_fs, X_test_fs, scaler = feature_scaling(
             X_train, X_test, selected_features, model_name
         )
 
-        model, y_pred, y_proba, mcc = model_evaluation(
+        model, y_pred, y_proba, mcc, metrics = model_evaluation(
             model, X_train_fs, y_train, X_test_fs, y_test, model_name
         )
 
-        # Best Model 저장
+        # 결과 저장용
+        results_list.append(metrics)
+        y_proba_dict[model_name] = y_proba
+
+        # Best Model 갱신
         if mcc > best_mcc:
             best_mcc = mcc
             best_model_name = model_name
@@ -436,22 +456,31 @@ def main():
             best_X_train_fs = X_train_fs
             best_X_test_fs = X_test_fs
 
-    print(f"\n✅ Best Model (MCC 기준): {best_model_name}")
+    print(f"✅ Best Model (MCC 기준): {best_model_name}")
 
     # 6단계: 엑셀 저장 및 시각화
-    save_results()
+    save_results(
+        results_list=results_list,
+        y_test=y_test,
+        y_proba_dict=y_proba_dict,
+        best_model_name=best_model_name,
+        best_model=best_model,
+        X_test_fs=best_X_test_fs,
+        selected_features=selected_features,
+        class_names=class_names
+    )
 
     # 7단계: XAI (LIME)
-    run_lime(best_model, best_X_train_fs, best_X_test_fs, selected_features, class_names)
+    xai_lime(best_model, best_X_train_fs, best_X_test_fs, selected_features, class_names)
 
     # 8단계: 알고리즘 저장
-    save_algorithm()
+    save_algorithm(best_model, best_scaler, selected_features)
 
     print("\n🎉 전체 파이프라인 완료!")
 
 
 # =====================================================
-# 실행
+# MAIN 실행
 # =====================================================
 if __name__ == "__main__":
     main()
