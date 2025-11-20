@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
+from kneed import KneeLocator
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (confusion_matrix, precision_score, recall_score, f1_score, matthews_corrcoef, roc_auc_score, balanced_accuracy_score, roc_curve, auc)
@@ -49,32 +50,41 @@ warnings.filterwarnings("ignore")
 # =====================================================
 # 1단계: 데이터 불러오기
 # =====================================================
-def load_data():
-    print("\n[1단계] 데이터 불러오기")
+def data_load():
+    print("\n[1단계] Data Load")
 
     files = glob.glob("./features_xlsx/*.xlsx")
     print(f"찾은 파일 수: {len(files)}")
 
     if len(files) == 0:
-        raise FileNotFoundError("❌ features_xlsx 폴더에 엑셀 파일이 없습니다.")
+        raise FileNotFoundError("❌ 폴더에 엑셀 파일이 없습니다.")
 
-    # 여러 개의 엑셀 파일을 하나로 합치기
-    df_list = [pd.read_excel(f, sheet_name=0) for f in files]
+    df_list = [pd.read_excel(f) for f in files]
     df = pd.concat(df_list, ignore_index=True)
 
-    # label 인코딩 (문자 → 0/1)
-    le = LabelEncoder()
-    y = le.fit_transform(df["label"])
-    class_names = list(le.classes_)
-    print(f"클래스 분포: {dict(zip(class_names, np.bincount(y)))}")
+    if "label" not in df.columns:
+        raise KeyError("❌ label 컬럼이 없습니다.")
 
-    # 숫자형 feature만 사용 (label은 제외)
+    y = df["label"].astype(int).values
+    class_names = ["Intermediate", "Advanced"]
+    label_counts = np.bincount(y)
+
+    # 숫자형 feature 자동 선택
     feature_cols = df.select_dtypes(include=["float64", "int64"]).columns
     feature_cols = feature_cols.drop("label", errors="ignore")
+
     X = df[feature_cols]
 
+    # 결측치 확인
+    total_missing = X.isnull().sum().sum()
+    print(f"결측치 개수: {total_missing}")
+
+    if total_missing > 0:
+        print("⚠️ 경고: 결측치가 존재합니다. \n")
+
     print(f"Feature 개수: {len(feature_cols)}")
-    print(f"결측치 개수: {X.isnull().sum().sum()}")
+    print(f"사용 클래스: {class_names}")
+    print(f"클래스 분포: 0 - {label_counts[0]}개, 1 - {label_counts[1]}개")
 
     return X, y, list(feature_cols), class_names
 
@@ -82,19 +92,18 @@ def load_data():
 # =====================================================
 # 2단계: Train/Test 분리
 # =====================================================
-def split_data(X, y, test_size=0.2):
-    print("\n[2단계] Train/Test 분리 (8:2)")
+def data_split(X, y, test_size=0.2):
+    print("\n[2단계] Train/Test Split")
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
+        X, y,
         test_size=test_size,
         stratify=y,
         random_state=RANDOM_STATE
     )
 
     print(f"Train 샘플 수: {len(X_train)}")
-    print(f"Test 샘플 수:  {len(X_test)}")
+    print(f"Test 샘플 수: {len(X_test)}")
     print(f"Train 클래스 분포: {np.bincount(y_train)}")
     print(f"Test  클래스 분포: {np.bincount(y_test)}")
 
@@ -102,14 +111,25 @@ def split_data(X, y, test_size=0.2):
 
 
 # =====================================================
-# 3단계: Data Scaling
+# 3단계: Feature Scaling
 # =====================================================
-def scale_data(X_train, X_test):
-    print("\n[3단계] Data Scaling")
+def feature_scaling(X_train, X_test, model_name):
+    print("\n[3단계] Feature Scaling")
 
-    # 결측치는 각 컬럼의 중앙값으로 채우기
-    X_train_filled = X_train.fillna(X_train.median())
-    X_test_filled = X_test.fillna(X_train.median())  # Train 기준으로 채우기
+    # 스케일링이 필요한 모델 리스트
+    scaling_required = ["Logistic Regression", "KNN", "SVM"]
+
+    # 스케일링 필요 없는 모델 반환
+    if model_name not in scaling_required:
+        print(f"⚠️ 스케일링 생략: {model_name}")
+        return X_train, X_test, None
+
+    print(f"✔ 스케일링 적용: {model_name}")
+
+    # 결측치는 Train 기준 중앙값으로 채우기
+    train_median = X_train.median()
+    X_train_filled = X_train.fillna(train_median)
+    X_test_filled = X_test.fillna(train_median)
 
     scaler = StandardScaler()
     scaler.fit(X_train_filled)
@@ -126,48 +146,61 @@ def scale_data(X_train, X_test):
         index=X_test.index
     )
 
-    print("Scaling 완료 (평균 0, 표준편차 1 기준)")
+    print("✔ Scaling 완료 (평균 0, 표준편차 1 기준)")
 
     return X_train_scaled, X_test_scaled, scaler
 
 
 # =====================================================
-# 4단계: Feature Selection (RF 기반 Top-K)
+# 4단계: Feature Selection
 # =====================================================
-def rf_importance_elbow(X_train, y_train, plot_path=None):
-    """
-    1) RF로 feature importance 계산
-    2) 중요도 내림차순 정렬
-    3) 중요도 차이(derivative) 계산
-    4) 가장 큰 변화량(drop)이 있는 지점 → elbow point = 최적 K
-    """
-
+def feature_selection_rf(X_train, y_train, plot_path=None):
     print("\n[4단계] Feature Selection")
 
-    rf = RandomForestClassifier(n_estimators=600, random_state=42, n_jobs=-1)
+    # 1) Random Forest 학습
+    rf = RandomForestClassifier(
+        n_estimators=600,
+        random_state=42,
+        n_jobs=-1
+    )
     rf.fit(X_train, y_train)
 
+    # 2) Feature Importance 정렬
     importances = rf.feature_importances_
     idx_sorted = np.argsort(importances)[::-1]
 
     sorted_imp = importances[idx_sorted]
     sorted_feat = X_train.columns[idx_sorted]
 
-    # 기울기(변화량) 계산
-    diffs = np.diff(sorted_imp)
+    # 3) x축 = feature index, y축 = importance
+    x = np.arange(1, len(sorted_imp) + 1)
+    y = sorted_imp
 
-    # 가장 크게 떨어진 지점 = elbow
-    elbow_k = np.argmin(diffs) + 1
-    elbow_k = max(3, elbow_k)  # 최소 3개 이상 보장
+    # 4) Kneedle 알고리즘
+    kn = KneeLocator(
+        x, y,
+        curve='convex',
+        direction='decreasing'
+    )
+
+    elbow_k = kn.knee
+
+    # knee를 찾지 못한 경우 대비
+    if elbow_k is None:
+        print("⚠️ Kneedle이 knee를 찾지 못했습니다. 기본값 K=5 사용합니다.")
+        elbow_k = 5
+
+    elbow_k = int(elbow_k)
+    elbow_k = max(3, elbow_k)
 
     selected_features = list(sorted_feat[:elbow_k])
 
-    # Plot 저장
     if plot_path:
-        plt.figure(figsize=(7, 5))
-        plt.plot(sorted_imp, marker="o")
-        plt.axvline(elbow_k, color="red", linestyle="--", label=f"Elbow K={elbow_k}")
-        plt.title("Random Forest Feature Importance Curve")
+        plt.figure(figsize=(8, 5))
+        plt.plot(x, y, marker="o")
+        if kn.knee is not None:
+            plt.axvline(elbow_k, color="red", linestyle="--", label=f"Knee = {elbow_k}")
+        plt.title("Random Forest Feature Importance (Kneedle Algorithm)")
         plt.xlabel("Feature Rank")
         plt.ylabel("Importance")
         plt.legend()
@@ -424,16 +457,16 @@ def main():
     print("============================================")
 
     # 1단계: 데이터 불러오기
-    X, y, feature_names, class_names = load_data()
+    X, y, feature_names, class_names = data_load()
 
     # 2단계: Train/Test 분리
-    X_train, X_test, y_train, y_test = split_data(X, y, test_size=0.2)
+    X_train, X_test, y_train, y_test = data_split(X, y, test_size=0.2)
 
-    # 3단계: Scaling
-    X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test)
+    # 3단계: Feature Scaling
+    X_train_scaled, X_test_scaled, scaler = feature_scaling(X_train, X_test, model_name)
 
-    # 4단계: Feature Selection (RF Elbow 적용)
-    selected_features, sorted_feat, sorted_imp, K = rf_importance_elbow(
+    # 4단계: Feature Selection
+    selected_features, sorted_feat, sorted_imp, K = feature_selection_rf(
         X_train_scaled, y_train, "./result/rf_importance_curve.png"
     )
     print(f"Selected Feature({K}개): {selected_features}")
