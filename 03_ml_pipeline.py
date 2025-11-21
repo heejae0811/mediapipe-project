@@ -72,7 +72,7 @@ def data_loading():
     print(f"결측치 개수: {total_missing}")
 
     if total_missing > 0:
-        print("⚠️ 경고: 결측치가 존재합니다. 이후 단계에서 처리합니다. \n")
+        print("⚠️ 경고: 결측치가 존재합니다. \n")
 
     print(f"Feature 개수: {len(feature_cols)}")
     print(f"사용 클래스: {class_names}")
@@ -121,6 +121,27 @@ def feature_selection_rf(X_train, y_train, save_path=None, min_features=3):
 
     sorted_imp = importances[idx_sorted]
     sorted_feat = X_train.columns[idx_sorted]
+
+    # Feature Importance Bar Plot - 상위 20개
+    top_k = 20 if len(sorted_feat) > 20 else len(sorted_feat)
+
+    plt.figure(figsize=(8, 5))
+    sns.barplot(
+        x=sorted_imp[:top_k],
+        y=sorted_feat[:top_k],
+        orient="h",
+        palette="viridis"
+    )
+    plt.title("Top Feature Importances (Random Forest)")
+    plt.xlabel("Importance")
+    plt.ylabel("Feature")
+    plt.tight_layout()
+
+    fi_path = "./result/feature_importance_barplot.png"
+    plt.savefig(fi_path, dpi=300)
+    plt.close()
+
+    print(f"Feature Importance 그래프 저장 완료: {fi_path}")
 
     # Kneedle 적용을 위한 x, y 정의
     x = np.arange(1, len(sorted_imp) + 1)
