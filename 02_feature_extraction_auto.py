@@ -318,8 +318,6 @@ def extract_features(video_path):
     # straight_distance = sqrt((x_end - x_start)^2 + (y_end - y_start)^2)
     straight_distance = float(np.sqrt((hip_x[-1] - hip_x[0])**2 + (hip_y[-1] - hip_y[0])**2))
 
-    path_efficiency = float(straight_distance / (path_length + 1e-6))
-
     immobile_mask = hip_v < 1.0  # 임계값(1 pixel/sec) 아래를 '거의 정지'로 정의
     immobility_time = float(np.sum(immobile_mask) * dt_eff)
     immobility_ratio = float(np.sum(immobile_mask) / len(hip_v))
@@ -334,7 +332,6 @@ def extract_features(video_path):
         "fluency_hip_jerk_max":      float(np.max(hip_j)),
         "fluency_hip_path_length":   path_length,
         "fluency_hip_straight_distance": straight_distance,
-        "fluency_hip_path_efficiency":   path_efficiency,
         "fluency_hip_immobility_time":   immobility_time,
         "fluency_hip_immobility_ratio":  immobility_ratio,
 
