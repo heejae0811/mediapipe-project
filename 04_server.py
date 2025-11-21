@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 # ====================================================================
-#  1. 최종 버전 특징 추출 코드 (버그 수정됨)
+#  1. 최종 버전 특징 추출 코드
 # ====================================================================
 FRAME_INTERVAL = 3
 MICRO_MOVEMENT_THRESH = 5.0
@@ -18,7 +18,7 @@ LIMB_MISSING_RATIO_MAX = 0.40
 mp_pose = mp.solutions.pose
 
 
-# --- Helper Functions ---
+# ------ Helper Functions ------
 def fill_missing(arr):
     return pd.Series(arr, dtype="float").interpolate(limit_direction="both").to_numpy()
 
@@ -81,7 +81,6 @@ def exploration_features(d, micro_th=MICRO_MOVEMENT_THRESH):
     return distance_mean, micro_sum, return_dist, ratio
 
 
-# --- Main Feature Extraction Function ---
 def extract_features(video_path):
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -131,9 +130,11 @@ def extract_features(video_path):
     body_size = np.mean(body_sizes) if body_sizes else 1.0
     total_time = len(hip_xy) * dt_eff
 
-    hip_v = velocity_series(hip_xy, dt_eff);
-    hip_a = acc_series(hip_v, dt_eff);
+    # --- [BUG FIX] 순차적으로 계산하도록 수정 ---
+    hip_v = velocity_series(hip_xy, dt_eff)
+    hip_a = acc_series(hip_v, dt_eff)
     hip_j = jerk_series(hip_a, dt_eff)
+
     path_length = float(np.sum(hip_v * dt_eff))
     straight_distance = float(np.sqrt((hip_x[-1] - hip_x[0]) ** 2 + (hip_y[-1] - hip_y[0]) ** 2))
     path_efficiency = float(straight_distance / (path_length + 1e-6))
@@ -178,7 +179,6 @@ def extract_features(video_path):
         if pts is None:
             control[key_r], control[key_n] = np.nan, np.nan
         else:
-            # --- [BUG FIX] 아래 코드를 순차적으로 계산하도록 수정했습니다 ---
             v = velocity_series(pts, dt_eff)
             a = acc_series(v, dt_eff)
             j = jerk_series(a, dt_eff)
@@ -193,7 +193,7 @@ def extract_features(video_path):
 
 
 # ====================================================================
-#  2. 최종 Flask 서버 코드 (이전과 동일)
+#  2. 최종 Flask 서버 코드
 # ====================================================================
 app = Flask(__name__)
 CORS(app)
@@ -201,8 +201,8 @@ CORS(app)
 try:
     print("🧠 모델, 스케일러, 피처 리스트를 로드합니다...")
     model = joblib.load("./result/best_model.pkl")
-    scaler = joblib.load("./result/scaler.pkl")
-    selected_features = joblib.load("./result/selected_features.pkl")
+    scaler = joblib.load("./result/best_scaler.pkl")
+    selected_features = joblib.load("./result/best_features.pkl")
     print(f"✅ 로드 성공! (필요한 특징 수: {len(selected_features)}개)")
 except FileNotFoundError as e:
     print(f"❌ 치명적 에러: '{e.filename}' 파일을 찾을 수 없습니다. 먼저 머신러닝 파이프라인을 실행하세요.")
@@ -211,8 +211,9 @@ except FileNotFoundError as e:
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if not all([model, scaler, selected_features]):
+    if not all([model, selected_features]):
         return jsonify({"error": "서버가 올바르게 초기화되지 않았습니다. 서버 로그를 확인하세요."}), 500
+
     if 'video' not in request.files:
         return jsonify({"error": "요청에 'video' 파일이 없습니다."}), 400
 
@@ -231,19 +232,21 @@ def predict():
         print(f"✨ {len(selected_features)}개의 주요 특징 선택 및 정렬 중...");
         predict_df = all_features_df.reindex(columns=selected_features).fillna(0)
 
-        print("📏 스케일링 적용 중...");
-        predict_df_scaled = scaler.transform(predict_df)
+        predict_df_processed = predict_df
+        if scaler is not None:
+            print("📏 스케일링 적용 중...");
+            predict_df_processed = scaler.transform(predict_df)
 
         print("🤖 모델 예측 수행...");
-        prediction_result = model.predict(predict_df_scaled)[0]
-        prediction_proba = model.predict_proba(predict_df_scaled)[0]
-        result_label = 'Good' if prediction_result == 1 else 'Bad'
+        prediction_result = model.predict(predict_df_processed)[0]
+        prediction_proba = model.predict_proba(predict_df_processed)[0]
+        result_label = 'Advanced' if prediction_result == 1 else 'Intermediate'
         confidence = prediction_proba[np.where(model.classes_ == prediction_result)[0][0]]
         print(f"👍 예측 결과: {result_label} (신뢰도: {confidence:.2f})")
 
         analysis_data = all_features_df.iloc[0].to_dict()
         gpt_prompt_data = {
-            "path_inefficiency": round(analysis_data.get('fluency_hip_path_efficiency', 0), 2),
+            "path_efficiency": round(analysis_data.get('fluency_hip_path_efficiency', 0), 2),
             "immobility_ratio": round(analysis_data.get('fluency_hip_immobility_ratio', 0), 2),
             "jerk_mean": round(analysis_data.get('fluency_hip_jerk_mean_norm_body', 0), 2),
             "ascent_speed": round(analysis_data.get('speed_hip_ascent_speed_norm_body', 0), 2)
