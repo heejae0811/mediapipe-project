@@ -137,7 +137,7 @@ def feature_selection_rf(X_train, y_train, save_path=None, min_features=3):
     plt.ylabel("Feature")
     plt.tight_layout()
 
-    fi_path = "./result/feature_importance_barplot.png"
+    fi_path = "./result/rf_feature_importance.png"
     plt.savefig(fi_path, dpi=300)
     plt.close()
 
@@ -321,7 +321,7 @@ def save_results(results_list, y_test, y_proba_dict, best_model_name, best_model
     plt.xlabel("Predicted")
     plt.ylabel("True")
     plt.tight_layout()
-    cm_path = os.path.join(RESULT_DIR, "confusion_matrix_best.png")
+    cm_path = os.path.join(RESULT_DIR, "best_confusion_matrix.png")
     plt.savefig(cm_path, dpi=300)
     plt.close()
     print(f"Confusion Matrix 저장: {cm_path}")
@@ -340,7 +340,7 @@ def save_results(results_list, y_test, y_proba_dict, best_model_name, best_model
     plt.legend(loc="lower right", fontsize=8)
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    roc_all_path = os.path.join(RESULT_DIR, "roc_all_models.png")
+    roc_all_path = os.path.join(RESULT_DIR, "all_roc_curve.png")
     plt.savefig(roc_all_path, dpi=300)
     plt.close()
     print(f"ROC Curve 저장: {roc_all_path}")
@@ -392,7 +392,7 @@ def xai_lime(best_model, X_train_fs, X_test_fs, selected_features, class_names):
             return best_model.predict_proba(x)
 
         exp = explainer.explain_instance(sample, predict_fn)
-        lime_path = os.path.join(RESULT_DIR, "lime_explanation_best.html")
+        lime_path = os.path.join(RESULT_DIR, "best_lime_explanation.html")
         exp.save_to_file(lime_path)
         print(f"LIME 결과 저장: {lime_path}")
 
@@ -407,8 +407,8 @@ def save_algorithm(best_model, scaler, selected_features):
     print("\n[8단계] 알고리즘 저장")
 
     model_path = "./result/best_model.pkl"
-    scaler_path = "./result/scaler.pkl"
-    features_path = "./result/selected_features.pkl"
+    scaler_path = "./result/best_scaler.pkl"
+    features_path = "./result/best_features.pkl"
 
     joblib.dump(best_model, model_path)
     joblib.dump(scaler, scaler_path)
@@ -435,7 +435,7 @@ def main():
 
     # 3단계: Feature Selection
     selected_features, _, _, _ = feature_selection_rf(
-        X_train, y_train, save_path="./result/rf_importance_curve.png"
+        X_train, y_train, save_path="./result/rf_feature_importance_kneedle.png"
     )
     print(selected_features)
 
