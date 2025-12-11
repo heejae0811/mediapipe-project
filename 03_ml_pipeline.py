@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
-from kneed import KneeLocator
+from sklearn.feature_selection import RFECV
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -105,74 +106,39 @@ def data_split(X, y, test_size=0.2):
 # =====================================================
 # 3단계: Feature Selection
 # =====================================================
-def feature_selection_rf(X_train, y_train, save_path=None, min_features=3):
-    print("\n[3단계] Feature Selection (RF 기반 Kneedle)")
+def feature_selection_rfecv_rf(X_train, y_train, min_features=5):
+    print("\n[3단계] Feature Selection (RFECV - RandomForest 기반)")
 
-    rf = RandomForestClassifier(
+    # Scaling (트리에 꼭 필요하진 않지만 전체 파이프라인 일관성 유지)
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+
+    base_estimator = RandomForestClassifier(
         n_estimators=300,
         random_state=RANDOM_STATE,
         n_jobs=-1
     )
-    rf.fit(X_train, y_train)
 
-    # 중요도 정렬
-    importances = rf.feature_importances_
-    idx_sorted = np.argsort(importances)[::-1]
-
-    sorted_imp = importances[idx_sorted]
-    sorted_feat = X_train.columns[idx_sorted]
-
-    # Feature Importance Bar Plot - 상위 20개
-    top_k = 20 if len(sorted_feat) > 20 else len(sorted_feat)
-
-    plt.figure(figsize=(8, 5))
-    sns.barplot(
-        x=sorted_imp[:top_k],
-        y=sorted_feat[:top_k],
-        orient="h",
-        palette="viridis"
+    cv = StratifiedKFold(
+        n_splits=5, shuffle=True, random_state=RANDOM_STATE
     )
-    plt.title("Top Feature Importances (Random Forest)")
-    plt.xlabel("Importance")
-    plt.ylabel("Feature")
-    plt.tight_layout()
 
-    fi_path = "./result/rf_feature_importance.png"
-    plt.savefig(fi_path, dpi=300)
-    plt.close()
+    rfecv = RFECV(
+        estimator=base_estimator,
+        step=1,
+        cv=cv,
+        scoring="matthews_corrcoef",
+        min_features_to_select=min_features,
+        n_jobs=-1
+    )
 
-    print(f"Feature Importance 그래프 저장 완료: {fi_path}")
+    rfecv.fit(X_train_scaled, y_train)
 
-    # Kneedle 적용을 위한 x, y 정의
-    x = np.arange(1, len(sorted_imp) + 1)
-    y = sorted_imp
+    selected_features = X_train.columns[rfecv.support_]
+    print(f"선택된 Feature 수: {len(selected_features)}")
+    print("Selected:", list(selected_features))
 
-    # KneeLocator 적용 (convex → concave → fallback)
-    elbow_k = (KneeLocator(x, y, curve="convex", direction="decreasing").knee or
-               KneeLocator(x, y, curve="concave", direction="decreasing").knee)
-
-    if elbow_k is None:
-        elbow_k = min_features
-
-    elbow_k = int(max(min_features, elbow_k))
-
-    selected_features = list(sorted_feat[:elbow_k])
-
-    if save_path:
-        plt.figure(figsize=(8, 5))
-        plt.plot(x, y, marker="o")
-        plt.axvline(elbow_k, color="red", linestyle="--", label=f"K={elbow_k}")
-        plt.title("Random Forest Feature Importance (Kneedle)")
-        plt.xlabel("Feature Rank")
-        plt.ylabel("Importance")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=300)
-        plt.close()
-
-    print(f"Selected Feature {elbow_k}개")
-
-    return selected_features, sorted_feat, sorted_imp, elbow_k
+    return list(selected_features)
 
 
 # =====================================================
@@ -434,8 +400,8 @@ def main():
     X_train, X_test, y_train, y_test = data_split(X, y)
 
     # 3단계: Feature Selection
-    selected_features, _, _, _ = feature_selection_rf(
-        X_train, y_train, save_path="./result/rf_feature_importance_kneedle.png"
+    selected_features = feature_selection_rfecv_rf(
+        X_train, y_train
     )
     print(selected_features)
 
