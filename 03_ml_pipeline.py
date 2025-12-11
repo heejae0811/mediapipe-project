@@ -7,7 +7,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 from sklearn.feature_selection import RFECV
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -113,18 +113,16 @@ def feature_selection_rfecv_rf(X_train, y_train, min_features=5):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
 
-    base_estimator = RandomForestClassifier(
+    estimator = RandomForestClassifier(
         n_estimators=300,
         random_state=RANDOM_STATE,
         n_jobs=-1
     )
 
-    cv = StratifiedKFold(
-        n_splits=5, shuffle=True, random_state=RANDOM_STATE
-    )
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
     rfecv = RFECV(
-        estimator=base_estimator,
+        estimator=estimator,
         step=1,
         cv=cv,
         scoring="matthews_corrcoef",
@@ -133,12 +131,12 @@ def feature_selection_rfecv_rf(X_train, y_train, min_features=5):
     )
 
     rfecv.fit(X_train_scaled, y_train)
+    selected = X_train.columns[rfecv.support_]
 
-    selected_features = X_train.columns[rfecv.support_]
-    print(f"선택된 Feature 수: {len(selected_features)}")
-    print("Selected:", list(selected_features))
+    print(f"선택된 Feature 수: {len(selected)}")
+    print("Selected:", list(selected))
 
-    return list(selected_features)
+    return list(selected)
 
 
 # =====================================================
@@ -246,7 +244,7 @@ def model_evaluation(model, X_train, y_train, X_test, y_test, model_name):
     auc_score = roc_auc_score(y_test, y_proba)
 
     metrics = {
-        "Model": model_name,
+        "Model": model_name + " (Base)",
         "Accuracy": accuracy,
         "Precision": precision,
         "Recall": recall,
@@ -258,9 +256,106 @@ def model_evaluation(model, X_train, y_train, X_test, y_test, model_name):
         "AUC": auc_score
     }
 
-    print(f"- Accuracy: {accuracy:.3f}, F1: {f1:.3f}, MCC: {mcc:.3f}, AUC: {auc_score:.3f} \n")
-
+    print(f"➡ 기본 모델 결과 [{model_name}] | Accuracy: {accuracy:.3f}, F1: {f1:.3f}, MCC: {mcc:.3f}, AUC: {auc_score:.3f}")
     return model, y_pred, y_proba, mcc, metrics
+
+
+# =====================================================
+# GridSearchCV 설정 (모델별)
+# =====================================================
+def get_param_grid(model_name):
+    # 모델별 하이퍼파라미터 검색 공간
+    grids = {
+        "Logistic Regression": {
+            "C": [0.01, 0.1, 1, 10],
+            "penalty": ["l2"],
+            "solver": ["lbfgs"]
+        },
+        "KNN": {
+            "n_neighbors": [3, 5, 7, 9],
+            "weights": ["uniform", "distance"]
+        },
+        "SVM": {
+            "C": [0.1, 1, 10],
+            "gamma": ["scale", "auto"],
+            "kernel": ["rbf", "poly"]
+        },
+        "Decision Tree": {
+            "max_depth": [3, 5, 7, None],
+            "min_samples_split": [2, 5, 10]
+        },
+        "Random Forest": {
+            "n_estimators": [100, 200, 300],
+            "max_depth": [None, 5, 10],
+            "min_samples_split": [2, 5]
+        },
+        "LightGBM": {
+            "num_leaves": [15, 31, 63],
+            "learning_rate": [0.001, 0.01, 0.1]
+        },
+        "XGBoost": {
+            "learning_rate": [0.01, 0.1, 0.2],
+            "max_depth": [3, 5, 7]
+        },
+        "CatBoost": {
+            "depth": [4, 6, 8],
+            "learning_rate": [0.01, 0.05, 0.1]
+        }
+    }
+
+    return grids.get(model_name, None)
+
+
+# =====================================================
+# GridSearchCV 기반 평가 함수
+# =====================================================
+
+def evaluate_with_gridsearch(model, X_train, y_train, X_test, y_test, model_name):
+    # GridSearchCV로 튜닝한 모델 성능 평가
+    param_grid = get_param_grid(model_name)
+
+    if param_grid is None:
+        print(f"❌ GridSearch 미지원 모델: {model_name}")
+        return None, None
+
+    print(f"🔍 GridSearchCV 실행: {model_name}")
+
+    grid = GridSearchCV(
+        estimator=model,
+        param_grid=param_grid,
+        cv=5,
+        scoring="f1",
+        n_jobs=-1
+    )
+
+    grid.fit(X_train, y_train)
+
+    best_model = grid.best_estimator_
+    print(f"✔ {model_name} Best Params: {grid.best_params_}")
+
+    # 튜닝 모델 성능 평가
+    y_pred = best_model.predict(X_test)
+    y_proba = best_model.predict_proba(X_test)[:, 1]
+
+    mcc = matthews_corrcoef(y_test, y_pred)
+    auc_score = roc_auc_score(y_test, y_proba)
+
+    metrics = {
+        "Model": model_name + " (Tuned)",
+        "Accuracy": (y_pred == y_test).mean(),
+        "Precision": precision_score(y_test, y_pred, zero_division=0),
+        "Recall": recall_score(y_test, y_pred, zero_division=0),
+        "F1": f1_score(y_test, y_pred, zero_division=0),
+        "Specificity": confusion_matrix(y_test, y_pred)[0, 0] / (confusion_matrix(y_test, y_pred)[0, 0] + confusion_matrix(y_test, y_pred)[0, 1]),
+        "Sensitivity": confusion_matrix(y_test, y_pred)[1, 1] / (confusion_matrix(y_test, y_pred)[1, 1] + confusion_matrix(y_test, y_pred)[1, 0]),
+        "Balanced_Accuracy": balanced_accuracy_score(y_test, y_pred),
+        "MCC": mcc,
+        "AUC": auc_score
+    }
+
+    print(f"➡ GridSearch 튜닝 결과 [{model_name}] | MCC={mcc:.3f}, AUC={auc_score:.3f} \n")
+
+    return best_model, y_pred, y_proba, mcc, metrics
 
 
 # =====================================================
@@ -385,8 +480,9 @@ def save_algorithm(best_model, scaler, selected_features):
     print(f"피처 저장 완료: {features_path}")
 
 
+
 # =====================================================
-# MAIN: 머신러닝 파이프라인
+# MAIN: 머신러닝 파이프라인 (기본 + GridSearch 튜닝 비교)
 # =====================================================
 def main():
     print("\n============================================")
@@ -396,14 +492,12 @@ def main():
     # 1단계: 데이터 불러오기
     X, y, feature_names, class_names = data_loading()
 
-    # 2단계: Data Split (Train/Test)
+    # 2단계: Train/Test 분리
     X_train, X_test, y_train, y_test = data_split(X, y)
 
-    # 3단계: Feature Selection
-    selected_features = feature_selection_rfecv_rf(
-        X_train, y_train
-    )
-    print(selected_features)
+    # 3단계: Feature Selection (RFECV-RF)
+    selected_features = feature_selection_rfecv_rf(X_train, y_train)
+    print("🎯 최종 선택된 Feature:", selected_features)
 
     # 4단계: ML 모델 정의
     models = model_development()
@@ -415,37 +509,62 @@ def main():
     best_X_train_fs = None
     best_X_test_fs = None
 
-    results_list = []
-    y_proba_dict = {}
+    results_list = []        # 기본 모델 + 튜닝 모델 모두 저장
+    y_proba_dict = {}        # ROC Curve 저장용
 
-    # 5단계: 모델 학습 및 평가
-    print("\n[5단계] 모델 학습 및 평가")
+    print("\n[5단계] 기본 모델 학습 및 평가 시작")
 
+    # 5단계: 모든 모델 기본 성능 평가
     for model_name, model in models.items():
+
+        # 스케일링
         X_train_fs, X_test_fs, scaler = feature_scaling(
             X_train, X_test, selected_features, model_name
         )
 
+        # 기본 모델 평가
         model, y_pred, y_proba, mcc, metrics = model_evaluation(
             model, X_train_fs, y_train, X_test_fs, y_test, model_name
         )
 
-        # 결과 저장용
+        # 기본 모델 성능 저장
         results_list.append(metrics)
-        y_proba_dict[model_name] = y_proba
+        y_proba_dict[model_name + " (Base)"] = y_proba
 
         # Best Model 갱신
         if mcc > best_mcc:
             best_mcc = mcc
-            best_model_name = model_name
+            best_model_name = model_name + " (Base)"
             best_model = model
             best_scaler = scaler
             best_X_train_fs = X_train_fs
             best_X_test_fs = X_test_fs
 
-    print(f"✅ Best Model (MCC 기준): {best_model_name}")
+        # ------------------------------
+        # GridSearchCV 튜닝 모델 평가
+        # ------------------------------
+        tuned_model, tuned_y_pred, tuned_y_proba, tuned_mcc, tuned_metrics = evaluate_with_gridsearch(
+            model, X_train_fs, y_train, X_test_fs, y_test, model_name
+        )
 
-    # 6단계: 엑셀 저장 및 시각화
+        # GridSearch가 실행된 모델만 저장
+        if tuned_metrics is not None:
+            results_list.append(tuned_metrics)
+            y_proba_dict[model_name + " (Tuned)"] = tuned_y_proba
+
+            if tuned_mcc > best_mcc:
+                best_mcc = tuned_mcc
+                best_model_name = model_name + " (Tuned)"
+                best_model = tuned_model
+                best_scaler = scaler
+                best_X_train_fs = X_train_fs
+                best_X_test_fs = X_test_fs
+
+    print("\n============================================")
+    print(f"🏆 최종 Best Model: {best_model_name} | MCC={best_mcc:.3f}")
+    print("============================================")
+
+    # 6단계: 결과 저장
     save_results(
         results_list=results_list,
         y_test=y_test,
