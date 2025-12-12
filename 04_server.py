@@ -1,5 +1,4 @@
 import os
-import re
 import cv2
 import joblib
 import numpy as np
@@ -8,73 +7,86 @@ import mediapipe as mp
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# -----------------------------
-#  Feature Extraction (너의 최신 코드)
-# -----------------------------
+# ==========================================================
+# 0. 설정
+# ==========================================================
 FRAME_INTERVAL = 3
-MICRO_MOVEMENT_THRESH = 5.0
 HIP_MISSING_RATIO_MAX = 0.30
 LIMB_MISSING_RATIO_MAX = 0.40
+
+UPLOAD_DIR = "./temp"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 mp_pose = mp.solutions.pose
 
-# ==== Helper Functions =====================================
+# ==========================================================
+# 1. ML 모델 로드
+# ==========================================================
+print("🔹 Loading ML artifacts...")
+
+model = joblib.load("./result/best_model.pkl")
+scaler = joblib.load("./result/best_scaler.pkl")
+selected_features = joblib.load("./result/best_features.pkl")
+
+print(f"✔ Model loaded | #features = {len(selected_features)}")
+
+# ==========================================================
+# 2. Feature Extraction Utils
+# ==========================================================
 def fill_missing(arr):
-    return pd.Series(arr, dtype="float").interpolate(limit_direction="both").to_numpy()
+    return pd.Series(arr, dtype=float).interpolate(limit_direction="both").to_numpy()
 
 def nan_ratio(arr):
-    return np.mean(np.isnan(np.asarray(arr, dtype=float)))
+    return np.mean(np.isnan(arr))
 
 def center_point(p1, p2):
-    return ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
+    return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
 
 def velocity_series(pts, dt):
     v = [0.0]
-    for t in range(1, len(pts)):
-        dx, dy = pts[t][0] - pts[t - 1][0], pts[t][1] - pts[t - 1][1]
-        v.append(np.sqrt(dx ** 2 + dy ** 2) / dt)
-    return np.array(v, dtype=float)
-
-def acc_series(v, dt):
-    return np.array([0.0] + [(v[t] - v[t - 1]) / dt for t in range(1, len(v))], dtype=float)
-
-def jerk_series(a, dt):
-    return np.array([0.0] + [(a[t] - a[t - 1]) / dt for t in range(1, len(a))], dtype=float)
-
-def body_size_from_landmarks(lm):
-    def dist(i, j):
-        return np.sqrt((lm[i].x - lm[j].x) ** 2 + (lm[i].y - lm[j].y) ** 2)
-    pairs = [(11, 12), (23, 24), (11, 23), (12, 24)]
-    vals = [dist(i, j) for i, j in pairs if not np.isnan(dist(i, j))]
-    return np.mean(vals) if len(vals) > 0 else 1.0
+    for i in range(1, len(pts)):
+        dx = pts[i][0] - pts[i - 1][0]
+        dy = pts[i][1] - pts[i - 1][1]
+        v.append(np.sqrt(dx**2 + dy**2) / dt)
+    return np.array(v)
 
 def limb_distance_series(pts):
     d = [0.0]
-    for t in range(1, len(pts)):
-        dx, dy = pts[t][0] - pts[t - 1][0], pts[t][1] - pts[t - 1][1]
-        d.append(np.sqrt(dx ** 2 + dy ** 2))
-    return np.array(d, dtype=float)
+    for i in range(1, len(pts)):
+        dx = pts[i][0] - pts[i - 1][0]
+        dy = pts[i][1] - pts[i - 1][1]
+        d.append(np.sqrt(dx**2 + dy**2))
+    return np.array(d)
 
-def exploration_features(d, micro_th=MICRO_MOVEMENT_THRESH):
-    d = np.asarray(d, dtype=float)
-    total_mov = np.sum(d > 0)
-    distance_mean = float(np.mean(d)) if d.size > 0 else np.nan
-    micro_mask = d < micro_th
-    micro_sum = float(np.sum(d[micro_mask])) if d.size > 0 else np.nan
-    return_dist = float(np.sum(np.abs(d[micro_mask]))) if d.size > 0 else np.nan
-    ratio = float(np.sum(micro_mask & (d > 0)) / total_mov) if total_mov > 0 else np.nan
-    return distance_mean, micro_sum, return_dist, ratio
+def body_size_from_landmarks(lm):
+    pairs = [(11,12), (23,24), (11,23), (12,24)]
+    vals = [
+        np.sqrt((lm[i].x - lm[j].x)**2 + (lm[i].y - lm[j].y)**2)
+        for i, j in pairs
+    ]
+    return np.mean(vals) if vals else 1.0
 
-# ==== Feature Extractor =====================================
+# ==========================================================
+# 3. Feature Extraction (ML 학습과 동일)
+# ==========================================================
 def extract_features(video_path):
+
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    dt = 1.0 / fps
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = 30 if fps <= 0 else fps
+    dt = 1 / fps
 
     hip_pts, lh_pts, rh_pts, lf_pts, rf_pts = [], [], [], [], []
     body_sizes = []
     frame_idx = 0
 
-    with mp_pose.Pose(static_image_mode=False, model_complexity=1) as pose:
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as pose:
+
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -85,26 +97,24 @@ def extract_features(video_path):
                 continue
 
             h, w = frame.shape[:2]
-            result = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            res = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-            if result.pose_landmarks:
-                lm = result.pose_landmarks.landmark
+            if res.pose_landmarks:
+                lm = res.pose_landmarks.landmark
                 body_sizes.append(body_size_from_landmarks(lm))
 
-                L_HIP = (lm[23].x * w, lm[23].y * h)
-                R_HIP = (lm[24].x * w, lm[24].y * h)
-                hip_pts.append(center_point(L_HIP, R_HIP))
+                hip_pts.append(center_point(
+                    (lm[23].x*w, lm[23].y*h),
+                    (lm[24].x*w, lm[24].y*h)
+                ))
 
-                lh_pts.append((lm[15].x * w, lm[15].y * h))
-                rh_pts.append((lm[16].x * w, lm[16].y * h))
-                lf_pts.append((lm[27].x * w, lm[27].y * h))
-                rf_pts.append((lm[28].x * w, lm[28].y * h))
+                lh_pts.append((lm[15].x*w, lm[15].y*h))
+                rh_pts.append((lm[16].x*w, lm[16].y*h))
+                lf_pts.append((lm[27].x*w, lm[27].y*h))
+                rf_pts.append((lm[28].x*w, lm[28].y*h))
             else:
-                hip_pts.append((np.nan, np.nan))
-                lh_pts.append((np.nan, np.nan))
-                rh_pts.append((np.nan, np.nan))
-                lf_pts.append((np.nan, np.nan))
-                rf_pts.append((np.nan, np.nan))
+                for lst in [hip_pts, lh_pts, rh_pts, lf_pts, rf_pts]:
+                    lst.append((np.nan, np.nan))
 
             frame_idx += 1
 
@@ -113,167 +123,125 @@ def extract_features(video_path):
     if len(hip_pts) < 2:
         return None
 
-    # HIP 결측치 처리
     hip_x = fill_missing([p[0] for p in hip_pts])
     hip_y = fill_missing([p[1] for p in hip_pts])
-    hip_xy = list(zip(hip_x, hip_y))
-
-    if nan_ratio(hip_x) > HIP_MISSING_RATIO_MAX or nan_ratio(hip_y) > HIP_MISSING_RATIO_MAX:
+    if nan_ratio(hip_x) > HIP_MISSING_RATIO_MAX:
         return None
 
-    # Limb 처리
-    limb_dict = {"left_hand": lh_pts, "right_hand": rh_pts, "left_foot": lf_pts, "right_foot": rf_pts}
-    for limb, pts in limb_dict.items():
-        xs = np.array([p[0] for p in pts], dtype=float)
-        ys = np.array([p[1] for p in pts], dtype=float)
-        if nan_ratio(xs) > LIMB_MISSING_RATIO_MAX or nan_ratio(ys) > LIMB_MISSING_RATIO_MAX:
-            limb_dict[limb] = None
-        else:
-            limb_dict[limb] = list(zip(fill_missing(xs), fill_missing(ys)))
-
+    hip_xy = list(zip(hip_x, hip_y))
     dt_eff = dt * FRAME_INTERVAL
-    body_size = np.mean(body_sizes) if body_sizes else 1.0
+    body_size = np.mean(body_sizes)
     total_time = len(hip_xy) * dt_eff
 
-    # ==== FLUENCY ====
     hip_v = velocity_series(hip_xy, dt_eff)
-    hip_a = acc_series(hip_v, dt_eff)
-    hip_j = jerk_series(hip_a, dt_eff)
+    path_length = np.sum(hip_v * dt_eff)
 
-    path_length = float(np.sum(hip_v * dt_eff))
-    straight_distance = float(np.sqrt((hip_x[-1]-hip_x[0])**2 + (hip_y[-1]-hip_y[0])**2))
-    path_efficiency = float(straight_distance / (path_length + 1e-6))
-
-    immobile_mask = hip_v < 1.0
-    immobility_ratio = float(np.sum(immobile_mask) / len(hip_v))
-
-    fluency = {
-        "fluency_hip_path_length": path_length,
-        "fluency_hip_path_efficiency": path_efficiency,
-        "fluency_hip_immobility_ratio": immobility_ratio,
-    }
-
-    # ==== EXPLORATION ====
-    limb_feats = {}
-    for limb, pts in limb_dict.items():
-        prefix = f"exploration_{limb}"
-        if pts is None:
-            limb_feats[f"{prefix}_distance_mean_norm_body"] = np.nan
-            continue
-        d = limb_distance_series(pts)
-        mean_dist = float(np.mean(d))
-        limb_feats[f"{prefix}_distance_mean_norm_body"] = mean_dist / body_size
-
-    # ==== STABILITY ====
-    stability = {
-        "stability_hip_velocity_sd_norm_body": float(np.std(hip_v) / body_size)
-    }
-
-    # ==== SPEED ====
-    ascent_speed = (hip_y[0] - hip_y[-1]) / total_time
-    speed = {
-        "speed_hip_ascent_speed": float(ascent_speed),
-        "speed_hip_ascent_speed_norm_body": float(ascent_speed / body_size),
-    }
-
-    return pd.DataFrame([{
+    feats = {
         "total_time": total_time,
-        **fluency,
-        **limb_feats,
-        **stability,
-        **speed
-    }])
+        "fluency_hip_path_length_norm_body": path_length / body_size,
+        "stability_hip_velocity_sd_norm_body": np.std(hip_v) / body_size,
+    }
 
+    # exploration (평균)
+    exp_vals = []
+    for pts in [lh_pts, rh_pts, lf_pts, rf_pts]:
+        xs = fill_missing([p[0] for p in pts])
+        ys = fill_missing([p[1] for p in pts])
+        if nan_ratio(xs) < LIMB_MISSING_RATIO_MAX:
+            d = limb_distance_series(list(zip(xs, ys)))
+            exp_vals.append(np.mean(d) / body_size)
 
-# -----------------------------
-#    FLASK SERVER
-# -----------------------------
+    feats["exploration_mean_norm_body"] = np.mean(exp_vals) if exp_vals else 0.0
+
+    return feats
+
+# ==========================================================
+# 4. 한국어 피드백 자동 매핑
+# ==========================================================
+def generate_korean_feedback(feats):
+    messages = []
+
+    for f in selected_features:
+        val = feats.get(f, 0.0)
+
+        if "jerk" in f:
+            if val > 0.05:
+                messages.append("움직임이 다소 급하게 이어지고 있어요. 조금 더 천천히 이어가 보세요.")
+            else:
+                messages.append("움직임이 부드럽고 안정적으로 이어지고 있어요.")
+
+        elif "velocity_sd" in f:
+            if val > 0.08:
+                messages.append("동작의 속도 변화가 큰 편이에요. 리듬을 일정하게 유지해 보세요.")
+            else:
+                messages.append("전반적으로 안정적인 움직임을 유지하고 있어요.")
+
+        elif "path_length" in f:
+            if val > 3.0:
+                messages.append("이동 경로가 다소 길어요. 불필요한 움직임을 줄여보세요.")
+            else:
+                messages.append("효율적인 경로로 잘 이동하고 있어요.")
+
+        elif "exploration" in f:
+            if val > 0.6:
+                messages.append("발과 손의 탐색 동작이 많은 편이에요. 다음 동작을 미리 계획해 보세요.")
+            else:
+                messages.append("탐색이 적고 동작 선택이 명확해 보여요.")
+
+    return list(dict.fromkeys(messages))  # 중복 제거
+
+# ==========================================================
+# 5. Flask Server
+# ==========================================================
 app = Flask(__name__)
 CORS(app)
 
-try:
-    print("🧠 Loading model/scaler/features...")
-    model = joblib.load("./result/best_model.pkl")
-    scaler = joblib.load("./result/best_scaler.pkl")
-    selected_features = joblib.load("./result/best_features.pkl")
-    print("✅ Model loaded successfully!")
-except Exception as e:
-    print("❌ Error:", e)
-    model, scaler, selected_features = None, None, None
-
-
 @app.route("/predict", methods=["POST"])
 def predict():
-    if model is None:
-        return jsonify({"error": "Server model not initialized."}), 500
 
     if "video" not in request.files:
-        return jsonify({"error": "'video' 파일이 없습니다."}), 400
+        return jsonify({"error": "No video uploaded"}), 400
 
     video = request.files["video"]
-    temp_path = f"temp_{video.filename}"
+    temp_path = os.path.join(UPLOAD_DIR, video.filename)
     video.save(temp_path)
 
     try:
-        # Feature extraction
-        feats_df = extract_features(temp_path)
-        if feats_df is None:
-            return jsonify({"error": "Feature extraction 실패 (결측치 과다 등)"}), 500
+        feats = extract_features(temp_path)
+        if feats is None:
+            return jsonify({"error": "Feature extraction failed"}), 422
 
-        analysis_data = feats_df.iloc[0].to_dict()
+        # ML 입력
+        X = pd.DataFrame([feats]).reindex(columns=selected_features).fillna(0.0)
+        if scaler is not None:
+            X[:] = scaler.transform(X)
 
-        # ML용 피처만 정렬
-        ml_df = feats_df.reindex(columns=selected_features).fillna(0)
+        pred = int(model.predict(X)[0])
+        prob = float(model.predict_proba(X)[0, 1])
 
-        if scaler:
-            X = scaler.transform(ml_df)
-        else:
-            X = ml_df.values
-
-        # Predict
-        pred = model.predict(X)[0]
-        proba = model.predict_proba(X)[0]
-        confidence = float(proba[pred])
-        label = "Advanced" if pred == 1 else "Intermediate"
-
-        # ---- UI 필수 요소 ----
-        ui_data = {
-            "total_time": float(analysis_data["total_time"]),
-            "hip_path_length": float(analysis_data["fluency_hip_path_length"]),
-            "hip_ascent_speed": float(analysis_data["speed_hip_ascent_speed"]),
-        }
-
-        # ---- GPT 프롬프트용 ----
-        exploration_mean = np.nanmean([
-            analysis_data.get("exploration_left_hand_distance_mean_norm_body", np.nan),
-            analysis_data.get("exploration_right_hand_distance_mean_norm_body", np.nan),
-            analysis_data.get("exploration_left_foot_distance_mean_norm_body", np.nan),
-            analysis_data.get("exploration_right_foot_distance_mean_norm_body", np.nan),
-        ])
-
-        gpt_prompt_data = {
-            "path_efficiency": round(analysis_data["fluency_hip_path_efficiency"], 3),
-            "immobility_ratio": round(analysis_data["fluency_hip_immobility_ratio"], 3),
-            "jerk_mean_norm": round(analysis_data.get("fluency_hip_jerk_mean_norm_body", 0), 3),
-            "ascent_speed_norm": round(analysis_data["speed_hip_ascent_speed_norm_body"], 3),
-            "exploration_mean_norm": round(float(exploration_mean), 3),
-            "stability_velocity_sd_norm": round(analysis_data["stability_hip_velocity_sd_norm_body"], 3),
-        }
+        feedback_texts = generate_korean_feedback(feats)
 
         return jsonify({
-            "prediction": label,
-            "confidence": confidence,
-            "ui_data": ui_data,
-            "gpt_prompt_data": gpt_prompt_data
+            "prediction": {
+                "label": "Advanced" if pred == 1 else "Intermediate",
+                "probability": round(prob, 3)
+            },
+            "feedback_features": {
+                f: round(float(feats.get(f, 0.0)), 3)
+                for f in selected_features
+            },
+            "feedback_messages": feedback_texts
         })
 
     except Exception as e:
-        return jsonify({"error": f"Server error: {e}"}), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-
+# ==========================================================
+# 6. Run
+# ==========================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    app.run(host="0.0.0.0", port=5001)
