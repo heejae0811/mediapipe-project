@@ -60,7 +60,7 @@ def data_loading():
 
     # y 라벨
     y = df["label"].astype(int).values
-    class_names = ["Intermediate", "Advanced"]
+    class_names = ["Advanced", "Intermediate"]
     label_counts = np.bincount(y)
 
     # 수치형 feature 자동 선택
@@ -80,7 +80,7 @@ def data_loading():
         print("⚠️ 경고: 결측치가 존재합니다. (현재 코드는 별도 처리 없이 진행)")
 
     print(f"최종 Feature 개수: {len(feature_cols)}")
-    print(f"클래스 분포: 0 - {label_counts[0]}개, 1 - {label_counts[1]}개")
+    print(f"클래스 분포: Advanced(0)- {label_counts[0]}개, Intermediate(1) - {label_counts[1]}개")
 
     return X, y, feature_cols, class_names
 
