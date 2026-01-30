@@ -9,13 +9,13 @@ import mediapipe as mp
 # ==========================================================
 # 0. 기본 설정
 # ==========================================================
-VIDEO_DIR = "./videos/"
+VIDEO_DIR = "./v/"
 OUTPUT_DIR = "./features_xlsx/"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-FRAME_INTERVAL = 3
+FRAME_INTERVAL = 1
 HIP_MISSING_RATIO_MAX = 0.30
-LIMB_MISSING_RATIO_MAX = 0.40
+BODYSIZE_MISSING_RATIO_MAX = 0.40
 
 mp_pose = mp.solutions.pose
 
@@ -44,19 +44,16 @@ def extract_id_and_label(video_path):
 
 
 # ==========================================================
-# 2. Missing 값 처리
+# 2. Missing 처리
 # ==========================================================
 def fill_missing(arr):
     """보간 후 forward/backward fill로 완전히 채우기"""
     s = pd.Series(arr, dtype=float)
-    s = s.interpolate(limit_direction="both")
-    s = s.ffill().bfill()
+    s = s.interpolate(limit_direction="both").ffill().bfill()
     return s.to_numpy()
 
 def nan_ratio(arr):
-    """배열에서 NaN 비율 계산"""
-    arr = np.asarray(arr, dtype=float)
-    return np.mean(np.isnan(arr))
+    return float(np.mean(np.isnan(np.asarray(arr, dtype=float))))
 
 
 # ==========================================================
@@ -82,43 +79,42 @@ def acc_series(v, dt):
 def jerk_series(a, dt):
     return np.gradient(a, dt)
 
-def body_size_from_landmarks(lm):
+def robust_body_size_from_landmarks(lm):
     def dist(i, j):
-        return np.sqrt((lm[i].x - lm[j].x) ** 2 + (lm[i].y - lm[j].y) ** 2)
+        dx = lm[i].x - lm[j].x
+        dy = lm[i].y - lm[j].y
+        return np.sqrt(dx*dx + dy*dy)
+    pairs = [(11,12), (23,24), (11,23), (12,24)]
+    bs = float(np.mean([dist(i,j) for i,j in pairs]))
+    return np.nan if (not np.isfinite(bs) or bs <= 1e-6) else bs
 
-    # 어깨, 엉덩이의 4개 거리 평균
-    pairs = [(11, 12), (23, 24), (11, 23), (12, 24)]
-    return np.mean([dist(i, j) for i, j in pairs])
-
-def limb_distance_series(pts):
-    """프레임 간 사지의 이동 거리 시계열"""
-    d = [0.0]
-    for i in range(1, len(pts)):
-        dx = pts[i][0] - pts[i-1][0]
-        dy = pts[i][1] - pts[i-1][1]
-        d.append(np.sqrt(dx**2 + dy**2))
-    return np.array(d)
+def linear_slope(y, dt):
+    y = np.asarray(y, dtype=float)
+    if len(y) < 3:
+        return np.nan
+    t = np.arange(len(y)) * dt
+    mask = np.isfinite(y)
+    if np.sum(mask) < 3:
+        return np.nan
+    t = t[mask] - np.mean(t[mask])
+    y = y[mask] - np.mean(y[mask])
+    denom = np.sum(t*t)
+    return np.nan if denom <= 0 else float(np.sum(t*y) / denom)
 
 
 # ==========================================================
-# 4. Feature Extraction (27개 변수)
+# 4. Feature Extraction
 # ==========================================================
 def extract_features(video_path):
-    """
-    비디오에서 운동학적 특징 추출
-    Returns: 27개 특징 변수 또는 None (실패 시)
-    """
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     fps = 30.0 if fps <= 0 else fps
     dt = 1.0 / fps
 
-    hip_pts = []
-    lh_pts, rh_pts = [], []
-    lf_pts, rf_pts = [], []
-    body_sizes = []  # 초반 5초 동안 수집
-    body_size = None
-    max_frames_for_size = int(fps * 5 / FRAME_INTERVAL)  # 초반 5초
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    total_time = (frame_count / fps) if (frame_count and fps > 0) else np.nan
+
+    hip_pts, body_sizes = [], []
     frame_idx = 0
 
     with mp_pose.Pose(
@@ -127,166 +123,75 @@ def extract_features(video_path):
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     ) as pose:
-
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-
             if frame_idx % FRAME_INTERVAL != 0:
                 frame_idx += 1
                 continue
 
-            h, w = frame.shape[:2]
             result = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-
             if result.pose_landmarks:
                 lm = result.pose_landmarks.landmark
-
-                # Body size는 초반 5초 동안 수집
-                if len(body_sizes) < max_frames_for_size:
-                    body_sizes.append(body_size_from_landmarks(lm))
-
-                # 5초 수집 완료 시 평균 계산
-                if body_size is None and len(body_sizes) >= max_frames_for_size:
-                    body_size = np.mean(body_sizes)
-
-                L_HIP = (lm[23].x * w, lm[23].y * h)
-                R_HIP = (lm[24].x * w, lm[24].y * h)
-                hip_pts.append(center_point(L_HIP, R_HIP))
-
-                lh_pts.append((lm[15].x * w, lm[15].y * h))
-                rh_pts.append((lm[16].x * w, lm[16].y * h))
-                lf_pts.append((lm[27].x * w, lm[27].y * h))
-                rf_pts.append((lm[28].x * w, lm[28].y * h))
+                hip_pts.append(center_point((lm[23].x, lm[23].y), (lm[24].x, lm[24].y)))
+                body_sizes.append(robust_body_size_from_landmarks(lm))
             else:
                 hip_pts.append((np.nan, np.nan))
-                lh_pts.append((np.nan, np.nan))
-                rh_pts.append((np.nan, np.nan))
-                lf_pts.append((np.nan, np.nan))
-                rf_pts.append((np.nan, np.nan))
-
+                body_sizes.append(np.nan)
             frame_idx += 1
 
     cap.release()
 
-    # 데이터 유효성 검증
-    if len(hip_pts) < 2:
-        print(f"  ⚠️ 프레임 수 부족: {len(hip_pts)}개")
-        return None
-
-    # Body size 확인
-    if body_size is None:
-        # 5초가 안 되었지만 수집된 데이터가 있으면 사용
-        if len(body_sizes) > 0:
-            body_size = np.mean(body_sizes)
-            print(f"  ℹ️ Body size를 {len(body_sizes)}개 프레임으로 계산")
-        else:
-            print(f"  ⚠️ Body size 계산 불가 (pose detection 실패)")
-            return None
-
-    # Hip missing ratio 체크
     hip_x = np.array([p[0] for p in hip_pts])
     hip_y = np.array([p[1] for p in hip_pts])
+    bs = np.array(body_sizes)
+
     if nan_ratio(hip_x) > HIP_MISSING_RATIO_MAX or nan_ratio(hip_y) > HIP_MISSING_RATIO_MAX:
-        print(f"  ⚠️ Hip missing ratio 초과: {nan_ratio(hip_x):.2%}, {nan_ratio(hip_y):.2%}")
+        print(f"❌ Hip NaN 비율 초과 → {os.path.basename(video_path)}")
+        return None
+    if nan_ratio(bs) > BODYSIZE_MISSING_RATIO_MAX:
+        print(f"❌ BodySize NaN 비율 초과 → {os.path.basename(video_path)}")
         return None
 
-    # Hip 보간 (이후 NaN 없음 보장)
     hip_x = fill_missing(hip_x)
     hip_y = fill_missing(hip_y)
+    bs = fill_missing(bs)
+
+    bs_med = np.median(bs[np.isfinite(bs)])
     hip_xy = list(zip(hip_x, hip_y))
 
-    # Limb missing 처리
-    limb_dict = {
-        "left_hand": lh_pts,
-        "right_hand": rh_pts,
-        "left_foot": lf_pts,
-        "right_foot": rf_pts
-    }
-
-    for k, pts in limb_dict.items():
-        xs = np.array([p[0] for p in pts])
-        ys = np.array([p[1] for p in pts])
-
-        # Missing ratio가 높으면 해당 limb는 None 처리
-        if nan_ratio(xs) > LIMB_MISSING_RATIO_MAX or nan_ratio(ys) > LIMB_MISSING_RATIO_MAX:
-            limb_dict[k] = None
-        else:
-            # 보간하여 사용
-            limb_dict[k] = list(zip(fill_missing(xs), fill_missing(ys)))
-
-    dt_eff = dt * FRAME_INTERVAL
-    total_time = len(hip_xy) * dt_eff
-
-    # ============================
-    # Fluency (9개)
-    # ============================
-    hip_v = velocity_series(hip_xy, dt_eff)
-    hip_a = acc_series(hip_v, dt_eff)
-    hip_j = jerk_series(hip_a, dt_eff)
-    path = np.sum(hip_v * dt_eff)
-
-    fluency = {
-        "fluency_hip_velocity_mean_norm": np.mean(hip_v) / body_size,
-        "fluency_hip_velocity_max_norm": np.max(hip_v) / body_size,
-        "fluency_hip_acc_mean_norm": np.mean(np.abs(hip_a)) / body_size,
-        "fluency_hip_acc_max_norm": np.max(np.abs(hip_a)) / body_size,
-        "fluency_hip_jerk_mean_norm": np.mean(np.abs(hip_j)) / body_size,
-        "fluency_hip_jerk_max_norm": np.max(np.abs(hip_j)) / body_size,
-        "fluency_hip_jerk_rms_norm": np.sqrt(np.mean(hip_j ** 2)) / body_size,
-        "fluency_hip_path_length_norm": path / body_size,
-        "fluency_hip_path_per_sec_norm": path / total_time / body_size,
-    }
-
-    # ============================
-    # Stability (7개)
-    # ============================
-    stability = {
-        "stability_hip_velocity_sd_norm": np.std(hip_v) / body_size,
-        "stability_hip_acc_sd_norm": np.std(hip_a) / body_size,
-        "stability_hip_jerk_sd_norm": np.std(hip_j) / body_size,
-    }
-
-    for limb in limb_dict:
-        pts = limb_dict[limb]
-        if pts is None:
-            # 인식 안된 관절은 NaN 처리
-            stability[f"stability_{limb}_velocity_sd_norm"] = np.nan
-        else:
-            v = velocity_series(pts, dt_eff)
-            stability[f"stability_{limb}_velocity_sd_norm"] = np.std(v) / body_size
-
-    # ============================
-    # Exploration (8개 - 각 limb당 2개씩)
-    # ============================
-    exploration = {}
-    for limb in limb_dict:
-        pts = limb_dict[limb]
-        if pts is None:
-            # 인식 안된 관절은 NaN 처리
-            exploration[f"exploration_{limb}_velocity_mean_norm"] = np.nan
-            exploration[f"exploration_{limb}_path_length_norm"] = np.nan
-        else:
-            v = velocity_series(pts, dt_eff)
-            d = limb_distance_series(pts)
-            # 평균 속도 (활동성)
-            exploration[f"exploration_{limb}_velocity_mean_norm"] = np.mean(v) / body_size
-            # 총 이동 거리 (탐색 범위)
-            exploration[f"exploration_{limb}_path_length_norm"] = np.sum(d) / body_size
-
-    # 최종 특징 딕셔너리 구성
-    video_id, video_label = extract_id_and_label(video_path)
+    hip_v = velocity_series(hip_xy, dt) / bs_med
+    hip_a = acc_series(hip_v, dt)
+    hip_j = jerk_series(hip_a, dt)
+    path = np.sum(hip_v * dt)
 
     feats = {
-        "id": video_id,
-        "label": video_label,
-        "total_time": total_time
-    }
+        "id": extract_id_and_label(video_path)[0],
+        "label": extract_id_and_label(video_path)[1],
+        "total_time": total_time,
+        "body_size_median": bs_med,
 
-    feats.update(fluency)
-    feats.update(stability)
-    feats.update(exploration)
+        # Fluency
+        "fluency_hip_velocity_mean": float(np.mean(hip_v)),
+        "fluency_hip_velocity_max": float(np.max(hip_v)),
+        "fluency_hip_acc_mean": float(np.mean(np.abs(hip_a))),
+        "fluency_hip_acc_max": float(np.max(np.abs(hip_a))),
+        "fluency_hip_jerk_mean": float(np.mean(np.abs(hip_j))),
+        "fluency_hip_jerk_max": float(np.max(np.abs(hip_j))),
+        "fluency_hip_jerk_rms": float(np.sqrt(np.mean(hip_j ** 2))),
+        "fluency_hip_path_length": float(path),
+        "fluency_hip_path_per_sec": float(path / total_time) if total_time > 0 else np.nan,
+
+        # Stability
+        "stability_hip_velocity_sd": float(np.std(hip_v)),
+        "stability_hip_acc_sd": float(np.std(hip_a)),
+        "stability_hip_jerk_sd": float(np.std(hip_j)),
+
+        # Trend
+        "trend_jerk_abs_slope": linear_slope(np.abs(hip_j), dt),
+        "trend_speed_slope": linear_slope(hip_v, dt),
+    }
 
     return feats
 
