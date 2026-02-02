@@ -67,7 +67,7 @@ def data_loading():
     feature_cols = df.select_dtypes(include=["float64", "int64"]).columns.tolist()
 
     # ML에서 제외할 변수
-    exclude_features = ["label", "id", "ID", "total_time"]
+    exclude_features = ["id", "label", "total_time", "body_size_median"]
     feature_cols = [c for c in feature_cols if c not in exclude_features]
 
     X = df[feature_cols]
