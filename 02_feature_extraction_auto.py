@@ -9,13 +9,12 @@ import mediapipe as mp
 # ==========================================================
 # 0. 기본 설정
 # ==========================================================
-VIDEO_DIR = "./v/"
+VIDEO_DIR = "./videos_new/"
 OUTPUT_DIR = "./features_xlsx/"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-FRAME_INTERVAL = 1
-HIP_MISSING_RATIO_MAX = 0.30
-BODYSIZE_MISSING_RATIO_MAX = 0.40
+FRAME_INTERVAL = 1  # 모든 프레임 분석
+MISSING_RATIO_MAX = 0.30  # 30%
 
 mp_pose = mp.solutions.pose
 
@@ -34,10 +33,8 @@ def extract_id_and_label(video_path):
     # ID 생성: 앞 숫자 + "_" + label
     parts = stem.split('_')
     if len(parts) >= 1 and label is not None:
-        # 첫 번째 숫자 부분 + label
         video_id = f"{parts[0]}_{label}"
     else:
-        # 파싱 실패 시 전체 이름 사용
         video_id = stem
 
     return video_id, label
@@ -51,6 +48,7 @@ def fill_missing(arr):
     s = pd.Series(arr, dtype=float)
     s = s.interpolate(limit_direction="both").ffill().bfill()
     return s.to_numpy()
+
 
 def nan_ratio(arr):
     return float(np.mean(np.isnan(np.asarray(arr, dtype=float))))
@@ -68,38 +66,42 @@ def velocity_series(pts, dt):
     """속도 시계열 계산 (첫 프레임 속도는 0)"""
     v = [0.0]
     for i in range(1, len(pts)):
-        dx = pts[i][0] - pts[i-1][0]
-        dy = pts[i][1] - pts[i-1][1]
-        v.append(np.sqrt(dx**2 + dy**2) / dt)
+        dx = pts[i][0] - pts[i - 1][0]
+        dy = pts[i][1] - pts[i - 1][1]
+        v.append(np.sqrt(dx ** 2 + dy ** 2) / dt)
     return np.array(v)
 
+
 def acc_series(v, dt):
-    return np.gradient(v, dt)
+    """가속도 계산"""
+    return np.gradient(v) / dt
+
 
 def jerk_series(a, dt):
-    return np.gradient(a, dt)
+    """저크 계산"""
+    return np.gradient(a) / dt
+
 
 def robust_body_size_from_landmarks(lm):
+    """Robust한 body size 계산 - NaN 제외하고 평균"""
     def dist(i, j):
         dx = lm[i].x - lm[j].x
         dy = lm[i].y - lm[j].y
-        return np.sqrt(dx*dx + dy*dy)
-    pairs = [(11,12), (23,24), (11,23), (12,24)]
-    bs = float(np.mean([dist(i,j) for i,j in pairs]))
-    return np.nan if (not np.isfinite(bs) or bs <= 1e-6) else bs
+        return np.sqrt(dx * dx + dy * dy)
 
-def linear_slope(y, dt):
-    y = np.asarray(y, dtype=float)
-    if len(y) < 3:
+    pairs = [(11, 12), (23, 24), (11, 23), (12, 24)]
+    dists = []
+
+    for i, j in pairs:
+        d = dist(i, j)
+        if np.isfinite(d) and d > 1e-6:
+            dists.append(d)
+
+    if len(dists) == 0:
         return np.nan
-    t = np.arange(len(y)) * dt
-    mask = np.isfinite(y)
-    if np.sum(mask) < 3:
-        return np.nan
-    t = t[mask] - np.mean(t[mask])
-    y = y[mask] - np.mean(y[mask])
-    denom = np.sum(t*t)
-    return np.nan if denom <= 0 else float(np.sum(t*y) / denom)
+
+    bs = float(np.mean(dists))
+    return bs
 
 
 # ==========================================================
@@ -111,17 +113,19 @@ def extract_features(video_path):
     fps = 30.0 if fps <= 0 else fps
     dt = 1.0 / fps
 
-    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    total_time = (frame_count / fps) if (frame_count and fps > 0) else np.nan
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    # total_time: 영상 총 길이 (초)
+    total_time = frame_count / fps if fps > 0 else np.nan
 
     hip_pts, body_sizes = [], []
     frame_idx = 0
 
     with mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=1,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
+            static_image_mode=False,
+            model_complexity=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
     ) as pose:
         while True:
             ret, frame = cap.read()
@@ -147,24 +151,35 @@ def extract_features(video_path):
     hip_y = np.array([p[1] for p in hip_pts])
     bs = np.array(body_sizes)
 
-    if nan_ratio(hip_x) > HIP_MISSING_RATIO_MAX or nan_ratio(hip_y) > HIP_MISSING_RATIO_MAX:
+    # Missing ratio 체크 (30%)
+    if nan_ratio(hip_x) > MISSING_RATIO_MAX or nan_ratio(hip_y) > MISSING_RATIO_MAX:
         print(f"❌ Hip NaN 비율 초과 → {os.path.basename(video_path)}")
         return None
-    if nan_ratio(bs) > BODYSIZE_MISSING_RATIO_MAX:
+    if nan_ratio(bs) > MISSING_RATIO_MAX:
         print(f"❌ BodySize NaN 비율 초과 → {os.path.basename(video_path)}")
         return None
 
+    # Body size median 계산 (보간 전 원본 유효 값으로)
+    bs_med = np.median(bs[np.isfinite(bs)])
+
+    # Missing data 보간
     hip_x = fill_missing(hip_x)
     hip_y = fill_missing(hip_y)
     bs = fill_missing(bs)
 
-    bs_med = np.median(bs[np.isfinite(bs)])
     hip_xy = list(zip(hip_x, hip_y))
 
-    hip_v = velocity_series(hip_xy, dt) / bs_med
+    # 픽셀 단위 속도 계산
+    hip_v_pixel = velocity_series(hip_xy, dt)
+
+    # Body size로 정규화
+    hip_v = hip_v_pixel / bs_med
     hip_a = acc_series(hip_v, dt)
     hip_j = jerk_series(hip_a, dt)
-    path = np.sum(hip_v * dt)
+
+    # Path length: 픽셀 단위 총 이동거리를 body size로 정규화
+    path_pixel = np.sum(hip_v_pixel * dt)
+    path = path_pixel / bs_med
 
     feats = {
         "id": extract_id_and_label(video_path)[0],
@@ -172,7 +187,7 @@ def extract_features(video_path):
         "total_time": total_time,
         "body_size_median": bs_med,
 
-        # Fluency
+        # Fluency (유창성) - 모두 body_size로 정규화됨
         "fluency_hip_velocity_mean": float(np.mean(hip_v)),
         "fluency_hip_velocity_max": float(np.max(hip_v)),
         "fluency_hip_acc_mean": float(np.mean(np.abs(hip_a))),
@@ -181,16 +196,11 @@ def extract_features(video_path):
         "fluency_hip_jerk_max": float(np.max(np.abs(hip_j))),
         "fluency_hip_jerk_rms": float(np.sqrt(np.mean(hip_j ** 2))),
         "fluency_hip_path_length": float(path),
-        "fluency_hip_path_per_sec": float(path / total_time) if total_time > 0 else np.nan,
 
-        # Stability
+        # Stability (안정성) - 모두 body_size로 정규화됨
         "stability_hip_velocity_sd": float(np.std(hip_v)),
         "stability_hip_acc_sd": float(np.std(hip_a)),
         "stability_hip_jerk_sd": float(np.std(hip_j)),
-
-        # Trend
-        "trend_jerk_abs_slope": linear_slope(np.abs(hip_j), dt),
-        "trend_speed_slope": linear_slope(hip_v, dt),
     }
 
     return feats
